@@ -42,8 +42,13 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
     camera.position.set(0, 0, mode === 'popout' ? 1.7 : mode === 'card' ? 1.55 : mode === 'banner' ? 1.6 : 1.75);
     camera.lookAt(0, 0, 0);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+    const renderer = new THREE.WebGLRenderer({
+      antialias: !isMobile,
+      alpha: true,
+      powerPreference: isMobile ? 'low-power' : 'high-performance',
+    });
+    renderer.setPixelRatio(Math.min(isMobile ? 1.25 : 2, window.devicePixelRatio || 1));
     renderer.setSize(width, height);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.35;
@@ -282,6 +287,7 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
       container.removeEventListener('pointerup', onPointerUp);
       container.removeEventListener('pointercancel', onPointerUp);
       renderer.dispose();
+      renderer.forceContextLoss();
       dracoLoader.dispose();
     };
   }, [glbUrl, mode]);

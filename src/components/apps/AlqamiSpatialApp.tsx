@@ -33,17 +33,7 @@ export const AlqamiSpatialApp: React.FC<AlqamiSpatialAppProps> = ({ onPreviewInS
   const [activeCategory, setActiveCategory] = useState('All');
   const [bannerArtifactIndex, setBannerArtifactIndex] = useState(1);
 
-  // Image 3: The 3D artifact helmet in the blue banner randomly changes in the same place
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setBannerArtifactIndex((prev) => {
-        let next = Math.floor(Math.random() * ALQAMI_ARTIFACTS.length);
-        if (next === prev) next = (next + 1) % ALQAMI_ARTIFACTS.length;
-        return next;
-      });
-    }, 5500);
-    return () => window.clearInterval(timer);
-  }, []);
+  // Keep the live 3D banner stable; changing models repeatedly creates new GPU resources.
   const [activeArtifactIndex, setActiveArtifactIndex] = useState(0);
   const [isPopOut3D, setIsPopOut3D] = useState(false);
   const [isClosingPopOut, setIsClosingPopOut] = useState(false);
@@ -281,7 +271,7 @@ export const AlqamiSpatialApp: React.FC<AlqamiSpatialAppProps> = ({ onPreviewInS
               </div>
             </div>
 
-            {/* Right: 3D MOVING ARTIFACT IN THE BLUE BANNER (Randomly changes in the same place) */}
+            {/* Right: live 3D artifact in the banner; users can tap to change it. */}
             <div className="flex items-center gap-3 pr-4 z-10 h-full">
               <div
                 onClick={() => {
@@ -362,16 +352,17 @@ export const AlqamiSpatialApp: React.FC<AlqamiSpatialAppProps> = ({ onPreviewInS
                   style={{ animationDelay: `${Math.min(240, productIndex * 45)}ms` }}
                   className="group cursor-pointer rounded-[24px] bg-white/10 hover:bg-white/15 border border-white/10 p-3.5 flex flex-col justify-between transition-all hover:scale-[1.02] ikea-product-card-enter pointer-events-auto shadow-sm"
                 >
-                  {/* Real 3D Model Stage (NOT static images!) */}
+                  {/* Lightweight thumbnail; the full 3D model loads when the artifact is opened. */}
                   <div className="h-36 rounded-[18px] bg-gradient-to-b from-[#2a2d3d] to-[#151722] flex items-center justify-center relative overflow-hidden">
-                    <AlqamiArtifact3DCanvas
-                      glbUrl={prod.model.glb}
-                      mode="card"
-                      autoRotate={false}
-                      className="w-full h-full relative z-10"
+                    <img
+                      src={assetUrl(prod.image)}
+                      alt={prod.title.en}
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-contain p-3"
                     />
                     <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-[9px] font-mono text-emerald-300 flex items-center gap-1 z-20 pointer-events-none">
-                      <Box className="w-2.5 h-2.5" /> 3D Model
+                      <Box className="w-2.5 h-2.5" /> Tap for 3D
                     </span>
                   </div>
 
