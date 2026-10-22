@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Scan, Box, Sparkles, Check, ArrowRight, ShieldCheck } from 'lucide-react';
 import { ALQAMI_ARTIFACTS, AlqamiArtifact } from '../../data/alqamiArtifacts';
 import { spatialSound } from '../../utils/spatialSound';
+import { assetUrl } from '../../utils/assetUrl';
 
 interface AlqamiScanModeModalProps {
   isOpen: boolean;
@@ -184,7 +185,7 @@ export const AlqamiScanModeModal: React.FC<AlqamiScanModeModalProps> = ({
             </div>
 
             <img
-              src={identifiedArtifact.image}
+              src={assetUrl(identifiedArtifact.image)}
               alt={identifiedArtifact.title.en}
               className="w-16 h-16 rounded-xl object-contain bg-black/30 border border-white/15 p-1"
             />

@@ -802,7 +802,7 @@ export function App() {
           {currentEnv === 'living-room' && (
             <img
               data-room-bg="true"
-              src="/images/custom_room_bg.png"
+              src={assetUrl('images/custom_room_bg.png')}
               alt="Warm Living Room with Fireplace"
               className="w-full h-full object-cover brightness-[0.92]"
             />

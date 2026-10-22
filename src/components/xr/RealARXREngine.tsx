@@ -14,6 +14,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { spatialSound } from '../../utils/spatialSound';
+import { assetUrl } from '../../utils/assetUrl';
 
 export interface XRHardwareState {
   cameraActive: boolean;
@@ -432,7 +433,7 @@ export const RealARXREngine: React.FC<RealARXREngineProps> = ({
     const model = document.createElement('model') as HTMLElement & {
       requestImmersive?: () => Promise<void>;
     };
-    model.setAttribute('src', '/immersive/vision-studio.usdz');
+    model.setAttribute('src', assetUrl('immersive/vision-studio.usdz'));
     // Keep the native model connected and rendered so Safari can load it for requestImmersive().
     Object.assign(model.style, {
       position: 'fixed',

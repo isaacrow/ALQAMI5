@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import jsQR from 'jsqr';
 import QRCode from 'qrcode';
+import { assetUrl } from '../../utils/assetUrl';
 import {
   X,
   Scan,
@@ -564,7 +565,7 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
                 >
                   {refObj.image ? (
                     <img
-                      src={refObj.image}
+                      src={assetUrl(refObj.image)}
                       alt={refObj.name}
                       className="w-5 h-5 rounded-md object-cover bg-black/40"
                     />

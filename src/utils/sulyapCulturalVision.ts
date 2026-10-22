@@ -155,7 +155,7 @@ class SulyapCulturalVisionEngine {
   public launchAppleQuickLook(usdzPath: string = '/immersive/vision-studio.usdz') {
     const anchor = document.createElement('a');
     anchor.setAttribute('rel', 'ar');
-    anchor.setAttribute('href', usdzPath);
+    anchor.setAttribute('href', assetUrl(usdzPath));
     const img = document.createElement('img');
     anchor.appendChild(img);
     document.body.appendChild(anchor);
