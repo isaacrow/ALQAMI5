@@ -637,10 +637,11 @@ export const AlqamiSpatialApp: React.FC<AlqamiSpatialAppProps> = ({ onPreviewInS
             <div className="flex items-center justify-end gap-3 pt-3">
               <button
                 onClick={() => triggerARPreviewInSpace(currentArtifact)}
-                className="vision-btn h-11 px-7 rounded-full bg-emerald-400 hover:bg-emerald-300 text-black font-bold text-[13.5px] shadow-lg flex items-center gap-2.5 cursor-pointer active:scale-95 transition-all"
+                className="vision-btn h-11 w-11 rounded-full bg-amber-400 hover:bg-amber-300 text-stone-950 shadow-lg flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                aria-label="Preview artifact in the room"
+                title="Preview artifact in the room"
               >
-                <Box className="w-4 h-4" />
-                <span>معاينة ثلاثية الأبعاد في الغرفة (Preview 3D in Room)</span>
+                <Box className="w-5 h-5" aria-hidden="true" />
               </button>
             </div>
           </div>

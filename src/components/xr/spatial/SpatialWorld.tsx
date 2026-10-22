@@ -12,13 +12,12 @@ import * as THREE from 'three';
 import { CSS3DObject, CSS3DRenderer } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { Box, Camera, Compass, Crosshair, Globe, Hand, Layers, LayoutGrid, LogOut, MapPin, Mountain, Navigation, PenTool, QrCode, RotateCcw, Scan, SlidersHorizontal, Trash2, Undo2, Users } from 'lucide-react';
+import { Box, Camera, Compass, Crosshair, Hand, Layers, LayoutGrid, LogOut, Mountain, Navigation, PenTool, QrCode, RotateCcw, Scan, SlidersHorizontal, Trash2, Undo2 } from 'lucide-react';
 import { OrientationTracker, requestMotionPermission } from './orientationTracker';
 import { createLovbackenModel, disposeThreeObject } from '../../three/LovbackenModel';
 import { spatialSound } from '../../../utils/spatialSound';
 import { createTroikaSpatialText } from '../../../utils/troika3DText';
 import { networkedSync } from '../../../utils/networkedSpatialSync';
-import { sulyapVision, HeritageGeoBeacon } from '../../../utils/sulyapCulturalVision';
 import { assetUrl } from '../../../utils/assetUrl';
 
 /* ──────────────────────────────────────────────────────────────────────────────
@@ -397,13 +396,6 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
   const airStrokesGroupRef = useRef<THREE.Group | null>(null);
   const activeStrokeRef = useRef<{ line: THREE.Line; points: THREE.Vector3[] } | null>(null);
 
-  const [geoBeaconsActive, setGeoBeaconsActive] = useState(false);
-  const geoBeaconsActiveRef = useRef(geoBeaconsActive);
-  geoBeaconsActiveRef.current = geoBeaconsActive;
-  const [geoBeacons, setGeoBeacons] = useState<HeritageGeoBeacon[]>([]);
-
-  const [activePeersCount, setActivePeersCount] = useState(0);
-
   const onOpenHomeRef = useRef(onOpenHome);
   onOpenHomeRef.current = onOpenHome;
 
@@ -718,11 +710,6 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
           yaw: cam.yaw,
           pitch: cam.pitch,
         });
-      }
-
-      // germanalvarez15/KitCoreWebAR: Real GPS Geographic Heritage Beacons
-      if (geoBeaconsActiveRef.current && frame % 24 === 0) {
-        setGeoBeacons(sulyapVision.getGeoBeacons(tracker.compassHeading || 0));
       }
 
       // 7) Spatial 360° Room Radar Mini-Map updates
@@ -1220,8 +1207,16 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
     setObjectCount(0);
   };
 
-  /* ── empty-space gestures: drag objects along the floor, or drag to turn the world ── */
-  const gestureRef = useRef<null | { id: number; x: number; y: number; object?: WorldObjectRecord; offset?: THREE.Vector3 }>(null);
+  /* ── Touch/hand gestures: drag an object, then pinch/twist with a second pointer ── */
+  const gestureRef = useRef<null | {
+    id: number;
+    x: number;
+    y: number;
+    object?: WorldObjectRecord;
+    offset?: THREE.Vector3;
+    pointers: Map<number, { x: number; y: number }>;
+    pinch?: { distance: number; angle: number; scale: number; rotation: number; midpoint: { x: number; y: number }; offset: THREE.Vector3 };
+  }>(null);
   const raycaster = useRef(new THREE.Raycaster());
 
   const floorPointAt = (clientX: number, clientY: number) => {
@@ -1274,7 +1269,33 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
       offset = fp ? picked.group.position.clone().sub(fp) : new THREE.Vector3();
       spatialSound.playPinchTap();
     }
-    gestureRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, object: picked, offset };
+    const active = gestureRef.current;
+    if (active && picked && active.object === picked) {
+      active.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (active.pointers.size >= 2) {
+        const [a, b] = [...active.pointers.values()];
+        active.pinch = {
+          distance: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+          angle: Math.atan2(b.y - a.y, b.x - a.x),
+          scale: picked.group.scale.x,
+          rotation: picked.group.rotation.y,
+          midpoint: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+          offset: (() => {
+            const midpoint = floorPointAt((a.x + b.x) / 2, (a.y + b.y) / 2);
+            return midpoint ? picked.group.position.clone().sub(midpoint) : new THREE.Vector3();
+          })(),
+        };
+      }
+      return;
+    }
+    gestureRef.current = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      object: picked,
+      offset,
+      pointers: new Map([[e.pointerId, { x: e.clientX, y: e.clientY }]]),
+    };
   };
 
   const onBackgroundPointerMove = (e: React.PointerEvent) => {
@@ -1297,7 +1318,29 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
     }
 
     const g = gestureRef.current;
-    if (!g || g.id !== e.pointerId) return;
+    if (!g) return;
+    const point = g.pointers.get(e.pointerId);
+    if (!point) return;
+    point.x = e.clientX;
+    point.y = e.clientY;
+    if (g.object && g.pointers.size >= 2 && g.pinch) {
+      const [a, b] = [...g.pointers.values()];
+      const distance = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y));
+      const angle = Math.atan2(b.y - a.y, b.x - a.x);
+      const midpointX = (a.x + b.x) / 2;
+      const midpointY = (a.y + b.y) / 2;
+      const scale = THREE.MathUtils.clamp(g.pinch.scale * (distance / g.pinch.distance), 0.12, 5);
+      g.object.group.scale.setScalar(scale);
+      g.object.group.rotation.y = g.pinch.rotation + THREE.MathUtils.euclideanModulo(angle - g.pinch.angle + Math.PI, Math.PI * 2) - Math.PI;
+      const floorPoint = floorPointAt(midpointX, midpointY);
+      if (floorPoint) {
+        const next = floorPoint.add(g.pinch.offset);
+        const radius = Math.hypot(next.x, next.z);
+        if (radius > 400 && radius < 6000) g.object.group.position.set(next.x, -EYE_HEIGHT, next.z);
+      }
+      return;
+    }
+    if (g.id !== e.pointerId) return;
     if (g.object) {
       const fp = floorPointAt(e.clientX, e.clientY);
       if (fp) {
@@ -1319,7 +1362,23 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
       setAirStrokesCount((c) => c + 1);
       return;
     }
-    if (gestureRef.current?.id === e.pointerId) gestureRef.current = null;
+    const g = gestureRef.current;
+    if (!g) return;
+    g.pointers.delete(e.pointerId);
+    if (g.id === e.pointerId) {
+      const nextId = g.pointers.keys().next().value;
+      if (nextId !== undefined) {
+        g.id = nextId;
+        const next = g.pointers.get(nextId)!;
+        g.x = next.x;
+        g.y = next.y;
+        if (g.object) {
+          const fp = floorPointAt(next.x, next.y);
+          g.offset = fp ? g.object.group.position.clone().sub(fp) : new THREE.Vector3();
+        }
+      } else gestureRef.current = null;
+    }
+    if (g.pointers.size < 2) g.pinch = undefined;
   };
 
   /* ── 3D Air Drawing actions ── */
@@ -1533,31 +1592,6 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
           <div className="fixed inset-0 z-[100] bg-white animate-out fade-out duration-300 pointer-events-none" />
         )}
 
-        {/* germanalvarez15/KitCoreWebAR: Real GPS Geographic Heritage Beacons */}
-        {geoBeaconsActive && (
-          <div className="absolute top-24 left-4 z-[53] space-y-1.5 max-w-xs pointer-events-auto">
-            <div className="px-3 py-1 rounded-full vision-glass border border-emerald-400/40 text-[10px] font-bold text-emerald-300 flex items-center gap-1.5 shadow-md">
-              <MapPin className="h-3 w-3" />
-              <span>GPS Cultural Heritage Radar</span>
-            </div>
-            {geoBeacons.map((beacon) => (
-              <div
-                key={beacon.id}
-                className="p-2.5 rounded-xl vision-glass border border-white/20 text-xs text-white space-y-0.5 shadow-lg backdrop-blur-xl"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-emerald-300 text-[11px]">{beacon.nameAr}</span>
-                  <span className="font-mono text-[10px] text-white/70">{beacon.distanceKm} km</span>
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-white/60">
-                  <span>{beacon.nameEn}</span>
-                  <span className="text-amber-300 font-mono">Bearing: {Math.round(beacon.bearingDeg)}°</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* Head-locked HUD */}
         <div
           className="spatial-world-hud absolute left-1/2 -translate-x-1/2 z-[60] flex items-center gap-1.5 rounded-full vision-ornament px-2 py-1.5 text-white"
@@ -1655,37 +1689,6 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
           >
             <Mountain className="h-4 w-4" />
           </button>
-          <button
-            onClick={() => {
-              spatialSound.playPinchTap();
-              setGeoBeaconsActive((g) => !g);
-            }}
-            className={`world-hud-btn ${
-              geoBeaconsActive
-                ? 'bg-emerald-500/40 text-emerald-300 ring-1 ring-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.6)]'
-                : 'hover:bg-white/15'
-            }`}
-            title="germanalvarez15/KitCoreWebAR: Real GPS Geographic Heritage Beacons"
-          >
-            <MapPin className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => {
-              spatialSound.playPinchTap();
-              sulyapVision.launchAppleQuickLook('/immersive/vision-studio.usdz');
-            }}
-            className="world-hud-btn hover:bg-white/15"
-            title="ohohRain/web_AR: Open Apple AR Quick Look USDZ"
-          >
-            <Globe className="h-4 w-4" />
-          </button>
-          <div
-            className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 text-[10px] font-mono text-cyan-300 border border-cyan-400/30"
-            title="networked-aframe: Multiplayer WebAR Collaboration"
-          >
-            <Users className="h-3 w-3" />
-            <span>{activePeersCount > 0 ? `${activePeersCount + 1} online` : 'P2P AR'}</span>
-          </div>
           <button
             onClick={takeSpatialPhoto}
             className="world-hud-btn hover:bg-white/15"
