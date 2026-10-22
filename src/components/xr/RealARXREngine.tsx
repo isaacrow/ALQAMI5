@@ -1034,46 +1034,7 @@ export const RealARXREngine: React.FC<RealARXREngineProps> = ({
       }
 
       // Initial physical room objects anchored in real space
-      const trackedList: Detected3DObject[] = [
-        {
-          id: 1,
-          label: 'room desk / surface',
-          category: 'furniture',
-          confidence: 0.96,
-          x: window.innerWidth * 0.22,
-          y: window.innerHeight * 0.52,
-          width: Math.min(340, window.innerWidth * 0.55),
-          height: Math.min(210, window.innerHeight * 0.32),
-          depthMeters: 1.15,
-          posX: 0.05,
-          posY: -0.25,
-          posZ: 1.15,
-          dimXcm: 80,
-          dimYcm: 45,
-          dimZcm: 50,
-          emoji: '🪑',
-          pinnedNote: pinnedNotesRef.current['room desk / surface-0'] || 'Main Surface Anchor',
-        },
-        {
-          id: 2,
-          label: 'workstation / screen',
-          category: 'tech',
-          confidence: 0.92,
-          x: window.innerWidth * 0.35,
-          y: window.innerHeight * 0.22,
-          width: Math.min(260, window.innerWidth * 0.42),
-          height: Math.min(170, window.innerHeight * 0.25),
-          depthMeters: 1.45,
-          posX: 0.12,
-          posY: 0.18,
-          posZ: 1.45,
-          dimXcm: 55,
-          dimYcm: 35,
-          dimZcm: 20,
-          emoji: '💻',
-          pinnedNote: pinnedNotesRef.current['workstation / screen-1'] || 'Spatial Display',
-        },
-      ];
+      const trackedList: Detected3DObject[] = [];
 
       const loop = (now: number) => {
         if (cancelled) return;
@@ -1093,14 +1054,7 @@ export const RealARXREngine: React.FC<RealARXREngineProps> = ({
         const yawOffset = (headRotationRef.current?.yaw || 0) * 120;
 
         // Render each 3D object bounding box with 60FPS perspective extrusion
-        trackedList.forEach((obj, idx) => {
-          const dynamicObj = {
-            ...obj,
-            y: Math.max(40, Math.min(canvas.height - obj.height - 40, obj.y + Math.sin(now * 0.002 + idx) * 1.5 - pitchOffset * 0.1)),
-            x: Math.max(20, Math.min(canvas.width - obj.width - 20, obj.x - yawOffset * 0.1)),
-          };
-          draw3DObjectPrism(ctx, dynamicObj, now);
-        });
+        // Mock 3D detection squares removed
       };
 
       setTracked3DObjects(trackedList);
@@ -1737,17 +1691,9 @@ export const RealARXREngine: React.FC<RealARXREngineProps> = ({
         </div>
       </div>
 
-      {xrState.cameraActive && xrState.handTrackingActive && (
-        <div className="hand-gesture-hint fixed bottom-4 left-1/2 z-[82] -translate-x-1/2 vision-ornament rounded-full px-3 py-2 text-[11px] text-white/85 pointer-events-none whitespace-nowrap">
-          Pinch tap/drag · open palm scroll · drag model to orbit
-        </div>
-      )}
+      null
 
-      {xrState.webxrSessionActive && nativeHandTrackingActive && (
-        <div className="hand-gesture-hint fixed bottom-16 left-1/2 z-[82] -translate-x-1/2 vision-ornament rounded-full px-3 py-2 text-[11px] text-white/85 pointer-events-none whitespace-nowrap">
-          Pinch to tap or drag · open palm to scroll
-        </div>
-      )}
+      null
 
       {/* Quiet status capsule; sensor controls stay tucked away until requested. */}
       <div className="xr-controls-root fixed top-4 right-4 z-[85] flex flex-col items-end">
