@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { assetUrl } from '../../utils/assetUrl';
 
 interface AlqamiArtifact3DCanvasProps {
@@ -45,24 +46,32 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     renderer.setSize(width, height);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.35;
+    renderer.toneMappingExposure = 1.45;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.replaceChildren(renderer.domElement);
 
-    // Studio Lights
-    const ambient = new THREE.AmbientLight(0xffffff, 1.4);
+    // Physically-based studio environment reflections for authentic gold & metals
+    const pmremGen = new THREE.PMREMGenerator(renderer);
+    pmremGen.compileEquirectangularShader();
+    const envRoom = new RoomEnvironment();
+    const envTexture = pmremGen.fromScene(envRoom, 0.04).texture;
+    scene.environment = envTexture;
+    pmremGen.dispose();
+
+    // Studio Museum Lights: bright, warm key and balanced fill for true material sheen
+    const ambient = new THREE.AmbientLight(0xffffff, 1.6);
     scene.add(ambient);
 
-    const dirLight = new THREE.DirectionalLight(0xffeedd, 2.4);
-    dirLight.position.set(2, 4, 3);
+    const dirLight = new THREE.DirectionalLight(0xfffbf2, 2.6);
+    dirLight.position.set(2.5, 4.5, 3.5);
     scene.add(dirLight);
 
-    const fillLight = new THREE.DirectionalLight(0x88bbff, 1.2);
-    fillLight.position.set(-3, 1, -2);
+    const fillLight = new THREE.DirectionalLight(0xf2f6ff, 1.5);
+    fillLight.position.set(-3, 2, 2.5);
     scene.add(fillLight);
 
-    const rimLight = new THREE.DirectionalLight(0x00f5d4, 0.8);
-    rimLight.position.set(0, -2, -2);
+    const rimLight = new THREE.DirectionalLight(0xfff3e0, 1.2);
+    rimLight.position.set(0, 3, -3);
     scene.add(rimLight);
 
     // Floor contact shadow
@@ -212,13 +221,11 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
       const time = performance.now() * 0.001;
 
       if (modeRef.current === 'card') {
-        if (isDragging) {
-          curRotY += (baseRotY - curRotY) * 0.15;
-          curRotX += (baseRotX - curRotX) * 0.15;
-          modelRoot.rotation.y = curRotY;
-          modelRoot.rotation.x = curRotX;
-          renderer.render(scene, camera);
-        }
+        curRotY += (baseRotY - curRotY) * 0.12;
+        curRotX += (baseRotX - curRotX) * 0.12;
+        modelRoot.rotation.y = curRotY;
+        modelRoot.rotation.x = curRotX;
+        renderer.render(scene, camera);
         return;
       }
 
@@ -238,10 +245,12 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
         modelRoot.rotation.z = organicRoll;
       } else {
         if (autoRotateRef.current && !isDragging) {
-          baseRotY += 0.007;
+          // Slow, graceful museum turntable rotation (approx 1/3 speed, silky smooth)
+          baseRotY += 0.0022;
         }
-        curRotX += (baseRotX - curRotX) * 0.12;
-        curRotY += (baseRotY - curRotY) * 0.12;
+        // Silky smooth damping
+        curRotX += (baseRotX - curRotX) * 0.06;
+        curRotY += (baseRotY - curRotY) * 0.06;
         modelRoot.rotation.x = curRotX;
         modelRoot.rotation.y = curRotY;
       }
@@ -258,6 +267,7 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
       container.removeEventListener('pointermove', onPointerMove);
       container.removeEventListener('pointerup', onPointerUp);
       container.removeEventListener('pointercancel', onPointerUp);
+      envTexture.dispose();
       renderer.dispose();
       dracoLoader.dispose();
     };

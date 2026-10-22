@@ -304,7 +304,11 @@ export function App() {
   useEffect(() => {
     const onOpenScanner = () => setIsArkitScannerOpen(true);
     window.addEventListener('visionos:open-arkit-scanner', onOpenScanner);
-    return () => window.removeEventListener('visionos:open-arkit-scanner', onOpenScanner);
+    window.addEventListener('visionos:enter-alqami-ar', onOpenScanner);
+    return () => {
+      window.removeEventListener('visionos:open-arkit-scanner', onOpenScanner);
+      window.removeEventListener('visionos:enter-alqami-ar', onOpenScanner);
+    };
   }, []);
 
   // Spatial 3D Keyboard State & Synced App Text
@@ -802,7 +806,7 @@ export function App() {
           {currentEnv === 'living-room' && (
             <img
               data-room-bg="true"
-              src="/images/custom_room_bg.png"
+              src={assetUrl('images/custom_room_bg.png')}
               alt="Warm Living Room with Fireplace"
               className="w-full h-full object-cover brightness-[0.92]"
             />
@@ -930,99 +934,6 @@ export function App() {
             <span>{currentTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
             <ChevronDown className="w-3.5 h-3.5" />
           </button>
-
-          {/* Real AR XR World for iPhone Safari / Mobile (Every window is its own 3D object in real room) */}
-          <button
-            onClick={async () => {
-              spatialSound.playAlqamiChime();
-              const next = !xrState.spatialWorldActive;
-              if (next) {
-                // Must request iOS gyro permission synchronously in the tap gesture
-                await requestMotionPermission();
-                if (!xrState.cameraActive) {
-                  window.dispatchEvent(new Event('visionos:toggle-camera'));
-                }
-              }
-              setXrState((prev) => ({
-                ...prev,
-                spatialWorldActive: next,
-                cameraActive: next ? true : prev.cameraActive,
-                gyroActive: next ? true : prev.gyroActive,
-              }));
-            }}
-            className={`vision-btn px-3.5 py-1 rounded-full vision-ornament text-xs font-semibold flex items-center gap-1.5 transition-all duration-300 ${
-              xrState.spatialWorldActive
-                ? 'bg-blue-600/50 border border-blue-300 text-blue-100 shadow-[0_0_22px_rgba(59,130,246,0.7)] ring-1 ring-blue-300'
-                : 'text-blue-200/90 hover:text-white hover:bg-white/20'
-            }`}
-            title="Real AR XR World: Each window and object lives in its own place in your room (Vision Pro style for iPhone Safari)"
-          >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                xrState.spatialWorldActive
-                  ? 'bg-blue-300 animate-pulse shadow-[0_0_8px_#60a5fa]'
-                  : 'bg-blue-400/50'
-              }`}
-            />
-            <span>🌐 iPhone AR World</span>
-          </button>
-
-          {/* Dedicated Alqami Spatial AR Mode Trigger */}
-          <button
-            onClick={() => {
-              spatialSound.playAlqamiChime();
-              const next = !xrState.alqamiModeActive;
-              setXrState((prev) => ({
-                ...prev,
-                alqamiModeActive: next,
-                cameraActive: next ? true : prev.cameraActive,
-                gyroActive: next ? true : prev.gyroActive,
-              }));
-            }}
-            className={`vision-btn px-3 py-1 rounded-full vision-ornament text-xs font-semibold flex items-center gap-1.5 transition-all duration-300 ${
-              xrState.alqamiModeActive
-                ? 'bg-amber-500/40 border border-amber-300 text-amber-100 shadow-[0_0_20px_rgba(245,190,70,0.65)] ring-1 ring-amber-300'
-                : 'text-amber-200/90 hover:text-white hover:bg-white/20'
-            }`}
-            title="Toggle Alqami AR Mode: Turns every window into physical Apple Vision Pro AR glass floating in your real room"
-          >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                xrState.alqamiModeActive
-                  ? 'bg-amber-300 animate-pulse shadow-[0_0_8px_#f59e0b]'
-                  : 'bg-amber-400/50'
-              }`}
-            />
-            <span>✨ Alqami Mode</span>
-          </button>
-
-          {/* Real-Life 3D Object Tracking Quick Button */}
-          <button
-            onClick={() => {
-              spatialSound.playPinchTap();
-              const next = !xrState.objectTracking3DActive;
-              setXrState((prev) => ({
-                ...prev,
-                objectTracking3DActive: next,
-                cameraActive: next ? true : prev.cameraActive,
-              }));
-            }}
-            className={`vision-btn px-3 py-1 rounded-full vision-ornament text-xs font-semibold flex items-center gap-1.5 transition-all duration-300 ${
-              xrState.objectTracking3DActive || xrState.alqamiModeActive
-                ? 'bg-emerald-500/40 border border-emerald-300 text-emerald-100 shadow-[0_0_18px_rgba(52,211,153,0.6)]'
-                : 'text-white/85 hover:text-white hover:bg-white/20'
-            }`}
-            title="Real-Life 3D Object Tracking: Detects physical objects in your room with 3D wireframe boxes"
-          >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                xrState.objectTracking3DActive || xrState.alqamiModeActive
-                  ? 'bg-emerald-300 animate-pulse shadow-[0_0_8px_#34d399]'
-                  : 'bg-white/40'
-              }`}
-            />
-            <span>3D Objects</span>
-          </button>
         </div>
 
       </div>
@@ -1122,15 +1033,37 @@ export function App() {
         onOpenApp={(id) => openSingleOrFocusApp(id, false)}
         onToggleRealCamera={() => window.dispatchEvent(new Event('visionos:toggle-camera'))}
         realCameraActive={xrState.cameraActive}
-        alqamiModeActive={xrState.alqamiModeActive}
-        onToggleAlqamiMode={() =>
+        spatialWorldActive={xrState.spatialWorldActive}
+        onToggleSpatialWorld={async () => {
+          spatialSound.playAlqamiChime();
+          const next = !xrState.spatialWorldActive;
+          if (next) {
+            await requestMotionPermission();
+            if (!xrState.cameraActive) {
+              window.dispatchEvent(new Event('visionos:toggle-camera'));
+            }
+          }
           setXrState((prev) => ({
             ...prev,
-            alqamiModeActive: !prev.alqamiModeActive,
-            cameraActive: !prev.alqamiModeActive ? true : prev.cameraActive,
-            gyroActive: !prev.alqamiModeActive ? true : prev.gyroActive,
-          }))
-        }
+            spatialWorldActive: next,
+            cameraActive: next ? true : prev.cameraActive,
+            gyroActive: next ? true : prev.gyroActive,
+          }));
+        }}
+        alqamiModeActive={xrState.alqamiModeActive}
+        onToggleAlqamiMode={() => {
+          spatialSound.playAlqamiChime();
+          const next = !xrState.alqamiModeActive;
+          setXrState((prev) => ({
+            ...prev,
+            alqamiModeActive: next,
+            cameraActive: next ? true : prev.cameraActive,
+            gyroActive: next ? true : prev.gyroActive,
+          }));
+          if (next) {
+            setIsArkitScannerOpen(true);
+          }
+        }}
         objectTracking3DActive={xrState.objectTracking3DActive}
         onToggle3DObjectTracking={() =>
           setXrState((prev) => ({
@@ -1146,6 +1079,7 @@ export function App() {
         <Suspense fallback={null}>
           <AlqamiARKitObjectScanner
             isOpen={isArkitScannerOpen}
+            initialMode="scan"
             onClose={() => setIsArkitScannerOpen(false)}
             onDeployInSpace={(art) => {
               window.dispatchEvent(

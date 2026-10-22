@@ -20,9 +20,11 @@ import {
   Compass,
   Sparkles,
   Crosshair,
+  Globe,
 } from 'lucide-react';
 import { AppId, EnvironmentId } from '../../types/spatial';
 import { spatialSound } from '../../utils/spatialSound';
+import { AlqamiLogoSvg } from '../common/AlqamiLogoSvg';
 
 interface ControlCenter3PanelProps {
   isOpen: boolean;
@@ -34,6 +36,8 @@ interface ControlCenter3PanelProps {
   onOpenApp: (id: AppId) => void;
   onToggleRealCamera: () => void;
   realCameraActive: boolean;
+  spatialWorldActive?: boolean;
+  onToggleSpatialWorld?: () => void;
   alqamiModeActive?: boolean;
   onToggleAlqamiMode?: () => void;
   objectTracking3DActive?: boolean;
@@ -50,6 +54,8 @@ export const ControlCenter3Panel: React.FC<ControlCenter3PanelProps> = ({
   onOpenApp,
   onToggleRealCamera,
   realCameraActive,
+  spatialWorldActive = false,
+  onToggleSpatialWorld,
   alqamiModeActive = false,
   onToggleAlqamiMode,
   objectTracking3DActive = false,
@@ -119,67 +125,59 @@ export const ControlCenter3Panel: React.FC<ControlCenter3PanelProps> = ({
             </div>
           </div>
 
-          {/* Middle Music Player Card (Oooh - Kehlani) */}
-          <div className="rounded-[24px] bg-black/25 border border-white/10 p-3.5 flex flex-col gap-2.5">
+          {/* Middle Alqami iPhone AR World Card (Replaces Kehlani card with SVG icon & text saying alqami with its logo) */}
+          <button
+            onClick={() => {
+              spatialSound.playAlqamiChime();
+              onToggleSpatialWorld?.();
+            }}
+            className={`w-full rounded-[24px] p-3.5 flex flex-col gap-2.5 text-left transition-all duration-300 border cursor-pointer ${
+              spatialWorldActive
+                ? 'bg-gradient-to-br from-amber-500/25 via-blue-600/30 to-black/60 border-amber-400/60 shadow-[0_0_24px_rgba(245,190,70,0.4)] ring-1 ring-amber-300'
+                : 'bg-black/30 hover:bg-black/45 border-white/10 hover:border-white/20'
+            }`}
+            title="iPhone AR World — Every window and 3D object in its own physical place in your real room"
+          >
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-amber-600 via-rose-700 to-stone-900 shrink-0 flex items-center justify-center shadow-md">
-                <img
-                  src="/reference/control_center__e3iguusguvma_large.jpg"
-                  alt="Kehlani Album"
-                  className="w-full h-full object-cover scale-[4.5] object-[25%_52%]"
-                />
+              <div
+                className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-300 ${
+                  spatialWorldActive
+                    ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-stone-950 shadow-[0_0_16px_rgba(251,191,36,0.65)] scale-105'
+                    : 'bg-white/10 text-amber-300 border border-white/10'
+                }`}
+              >
+                <AlqamiLogoSvg className="w-6 h-6" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-semibold text-white truncate">
-                  Oooh
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[14px] font-bold text-white tracking-wide">علقمي · ALQAMI</span>
                 </div>
-                <div className="text-[12px] text-white/60 truncate">Kehlani</div>
+                <div className="text-[12px] text-amber-200/90 font-medium flex items-center gap-1.5 mt-0.5">
+                  <Globe className="w-3.5 h-3.5 text-blue-300" />
+                  <span>iPhone AR World</span>
+                </div>
               </div>
             </div>
 
-            {/* Scrubber Bar */}
-            <div>
-              <div className="w-full h-1 rounded-full bg-white/20 overflow-hidden">
-                <div className="w-[76%] h-full bg-white/90 rounded-full" />
-              </div>
-              <div className="flex justify-between text-[10px] text-white/50 mt-1 font-medium">
-                <span>3:14</span>
-                <span>-0:54</span>
-              </div>
+            {/* Status Pill Indicator */}
+            <div className="flex items-center justify-between pt-1 border-t border-white/10">
+              <span
+                className={`text-[11px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1.5 ${
+                  spatialWorldActive
+                    ? 'bg-amber-400/25 text-amber-200 border border-amber-300/40'
+                    : 'bg-white/10 text-white/70'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    spatialWorldActive ? 'bg-amber-300 animate-pulse' : 'bg-white/40'
+                  }`}
+                />
+                {spatialWorldActive ? 'Active in Room' : 'Tap to Enter AR'}
+              </span>
+              <span className="text-[10px] text-white/50 font-mono">Vision Pro Mode</span>
             </div>
-
-            {/* Playback Controls */}
-            <div className="flex items-center justify-between px-2 pt-0.5">
-              <button
-                onClick={() => spatialSound.playPinchTap()}
-                className="text-white/85 hover:text-white transition"
-              >
-                <Rewind className="w-4 h-4 fill-current" />
-              </button>
-              <button
-                onClick={() => {
-                  setIsPlaying(!isPlaying);
-                  spatialSound.playPinchTap();
-                }}
-                className="text-white hover:scale-110 transition"
-              >
-                {isPlaying ? (
-                  <Pause className="w-5 h-5 fill-current" />
-                ) : (
-                  <Play className="w-5 h-5 fill-current" />
-                )}
-              </button>
-              <button
-                onClick={() => spatialSound.playPinchTap()}
-                className="text-white/85 hover:text-white transition"
-              >
-                <FastForward className="w-4 h-4 fill-current" />
-              </button>
-              <button className="text-white/70 hover:text-white transition">
-                <Airplay className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
+          </button>
 
           {/* Bottom 3 Notifications Pill */}
           <button
@@ -269,6 +267,15 @@ export const ControlCenter3Panel: React.FC<ControlCenter3PanelProps> = ({
           {/* Middle Action List */}
           <div className="rounded-[24px] bg-black/25 border border-white/10 py-1.5 px-2 flex flex-col gap-0.5 my-2 flex-1 justify-center">
             {[
+              {
+                id: 'arworld',
+                label: spatialWorldActive ? '🌐 iPhone AR World (Active)' : '🌐 iPhone AR World',
+                icon: Globe,
+                action: () => {
+                  spatialSound.playAlqamiChime();
+                  onToggleSpatialWorld?.();
+                },
+              },
               {
                 id: 'alqami',
                 label: alqamiModeActive ? '✨ Alqami AR (Active)' : '✨ Alqami AR Mode',

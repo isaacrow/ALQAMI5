@@ -3,5 +3,9 @@ export function assetUrl(path: string | undefined | null): string {
   if (/^(https?:|data:|blob:|\/\/)/i.test(path)) return path;
   const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
   const cleanPath = path.replace(/^\/+/, '');
-  return `${base}/${cleanPath}`;
+  const basePrefix = base.replace(/^\/+/, '');
+  if (basePrefix && (cleanPath === basePrefix || cleanPath.startsWith(basePrefix + '/'))) {
+    return `/${cleanPath}`;
+  }
+  return base ? `${base}/${cleanPath}` : `/${cleanPath}`;
 }

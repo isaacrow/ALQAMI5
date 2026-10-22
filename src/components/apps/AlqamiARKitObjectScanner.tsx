@@ -39,6 +39,7 @@ interface AlqamiARKitObjectScannerProps {
   onClose: () => void;
   onDeployInSpace?: (artifact: AlqamiArtifact) => void;
   onOpenDetail?: (artifact: AlqamiArtifact) => void;
+  initialMode?: 'detect' | 'scan';
 }
 
 export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> = ({
@@ -46,9 +47,10 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
   onClose,
   onDeployInSpace,
   onOpenDetail,
+  initialMode = 'scan',
 }) => {
   // Modes: 'detect' (Apple ARKit Object Detection & RDF Recall) | 'scan' (Apple ARKit Object Scanning & Give Metadata)
-  const [activeMode, setActiveMode] = useState<'detect' | 'scan'>('detect');
+  const [activeMode, setActiveMode] = useState<'detect' | 'scan'>(initialMode);
 
   // Detection state
   const referenceObjects = getAllReferenceObjects();
@@ -86,6 +88,16 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
   });
 
   const [savedSuccessToast, setSavedSuccessToast] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveMode(initialMode);
+      if (initialMode === 'scan') {
+        setScanStep(2);
+        setIsScanningActive(true);
+      }
+    }
+  }, [isOpen, initialMode]);
 
   // Video and Three.js 3D Viewport refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
