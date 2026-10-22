@@ -12,13 +12,15 @@ import * as THREE from 'three';
 import { CSS3DObject, CSS3DRenderer } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { Box, Camera, Compass, Crosshair, Hand, Layers, LayoutGrid, LogOut, Mountain, Navigation, PenTool, QrCode, RotateCcw, Scan, SlidersHorizontal, Trash2, Undo2 } from 'lucide-react';
+import { Box, Camera, Compass, Crosshair, Hand, Layers, LayoutGrid, LogOut, Mountain, Navigation, PenTool, QrCode, RotateCcw, SlidersHorizontal, Trash2, Undo2 } from 'lucide-react';
 import { OrientationTracker, requestMotionPermission } from './orientationTracker';
 import { createLovbackenModel, disposeThreeObject } from '../../three/LovbackenModel';
 import { spatialSound } from '../../../utils/spatialSound';
 import { createTroikaSpatialText } from '../../../utils/troika3DText';
 import { networkedSync } from '../../../utils/networkedSpatialSync';
 import { assetUrl } from '../../../utils/assetUrl';
+import { ALQAMI_ARTIFACTS, type AlqamiArtifact } from '../../../data/alqamiArtifacts';
+import { AlqamiArtifactRecognizer } from '../../../utils/alqamiArtifactRecognition';
 
 /* ──────────────────────────────────────────────────────────────────────────────
  * Spatial World — a visionOS-style "every window is its own object" renderer for
@@ -213,71 +215,6 @@ function createHandOcclusionGroup(): THREE.Group {
   return g;
 }
 
-/** Lightweight monocular optical flow for subtle 6DoF camera translation (AlvaAR inspired) */
-class OpticalFlowTracker {
-  private canvas = document.createElement('canvas');
-  private ctx: CanvasRenderingContext2D | null = null;
-  private prevData: Uint8ClampedArray | null = null;
-  public translation = new THREE.Vector3();
-  private velocity = new THREE.Vector3();
-
-  constructor() {
-    this.canvas.width = 64;
-    this.canvas.height = 48;
-    this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
-  }
-
-  update(video: HTMLVideoElement | null, angularSpeed: number) {
-    if (!video || video.readyState < 2 || !this.ctx) return;
-    if (angularSpeed > 0.4) {
-      this.prevData = null;
-      this.translation.lerp(new THREE.Vector3(), 0.08);
-      return;
-    }
-
-    try {
-      this.ctx.drawImage(video, 0, 0, 64, 48);
-      const img = this.ctx.getImageData(0, 0, 64, 48);
-      const cur = img.data;
-      if (this.prevData) {
-        let dxSum = 0;
-        let dySum = 0;
-        let count = 0;
-        const w = 64;
-        const h = 48;
-        for (let y = 10; y < h - 10; y += 12) {
-          for (let x = 10; x < w - 10; x += 12) {
-            const idx = (y * w + x) * 4;
-            const diffX = cur[idx] - cur[idx + 4];
-            const diffY = cur[idx] - cur[((y + 1) * w + x) * 4];
-            const diffT = cur[idx] - this.prevData[idx];
-            const gradSq = diffX * diffX + diffY * diffY;
-            if (gradSq > 80) {
-              dxSum += (-diffT * diffX) / gradSq;
-              dySum += (-diffT * diffY) / gradSq;
-              count++;
-            }
-          }
-        }
-        if (count > 3) {
-          const avgDx = Math.max(-3, Math.min(3, dxSum / count));
-          const avgDy = Math.max(-3, Math.min(3, dySum / count));
-          this.velocity.x += avgDx * 15;
-          this.velocity.y += -avgDy * 15;
-        }
-      }
-      this.prevData = cur;
-    } catch {
-      // Ignore
-    }
-
-    this.velocity.multiplyScalar(0.82);
-    this.translation.add(this.velocity);
-    this.translation.clampLength(0, 420); // max 42cm translation
-    this.translation.lerp(new THREE.Vector3(), 0.025); // gentle centering pull
-  }
-}
-
 /* ─────────────────────────── component ─────────────────────────── */
 
 /** visionOS 2 Celestial Immersion Environments */
@@ -367,12 +304,13 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
   const focusReticleRef = useRef<THREE.Group | null>(null);
   const controlPointerRef = useRef<null | { x: number; y: number; lastSeen: number; active: boolean }>(null);
   const handOcclGroupRef = useRef<THREE.Group | null>(null);
-  const opticalTrackerRef = useRef<OpticalFlowTracker>(new OpticalFlowTracker());
   const lastGazeIdRef = useRef<string | null>(null);
   const [gazeTargetId, setGazeTargetId] = useState<string | null>(null);
   const [isMicroPinching, setIsMicroPinching] = useState(false);
   const [handControlActive, setHandControlActive] = useState(false);
   const handControlActiveRef = useRef(false);
+  const [recognizedArtifact, setRecognizedArtifact] = useState<{ artifact: AlqamiArtifact; confidence: number } | null>(null);
+  const [recognitionStatus, setRecognitionStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
 
   const [immersionLevel, setImmersionLevel] = useState<number>(0);
   const immersionRef = useRef(immersionLevel);
@@ -386,6 +324,73 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
   const [activeEnvIndex, setActiveEnvIndex] = useState(0);
   const activeEnvRef = useRef(activeEnvIndex);
   activeEnvRef.current = activeEnvIndex;
+
+  // Keep the closed-set scanner running as part of the AR world, using the camera stream
+  // already owned by RealARXREngine. Three stable matches are required before showing a record.
+  useEffect(() => {
+    if (!cameraActive) {
+      setRecognizedArtifact(null);
+      setRecognitionStatus('loading');
+      return;
+    }
+
+    let disposed = false;
+    let timer = 0;
+    let lastCandidateId: string | null = null;
+    let consecutiveMatches = 0;
+    let consecutiveMisses = 0;
+    let modelReady = false;
+    const recognizer = new AlqamiArtifactRecognizer();
+
+    const scan = async () => {
+      if (disposed) return;
+      const video = document.querySelector<HTMLVideoElement>('video[data-passthrough-video]');
+      if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        timer = window.setTimeout(scan, 500);
+        return;
+      }
+
+      try {
+        const match = await recognizer.recognize(video);
+        if (disposed) return;
+        if (!modelReady) {
+          modelReady = true;
+          setRecognitionStatus('ready');
+        }
+        if (match) {
+          consecutiveMisses = 0;
+          consecutiveMatches = match.artifactId === lastCandidateId ? consecutiveMatches + 1 : 1;
+          lastCandidateId = match.artifactId;
+          if (consecutiveMatches >= 3) {
+            const artifact = ALQAMI_ARTIFACTS.find((item) => item.id === match.artifactId);
+            if (artifact) {
+              setRecognitionStatus('ready');
+              setRecognizedArtifact({ artifact, confidence: match.score });
+            }
+          }
+        } else {
+          consecutiveMisses += 1;
+          consecutiveMatches = 0;
+          lastCandidateId = null;
+          if (consecutiveMisses >= 3) setRecognizedArtifact(null);
+        }
+        timer = window.setTimeout(scan, 1100);
+      } catch (error) {
+        if (disposed) return;
+        console.warn('Alqami artifact recognition is unavailable:', error);
+        setRecognitionStatus('unavailable');
+        timer = window.setTimeout(scan, 10000);
+      }
+    };
+
+    setRecognitionStatus('loading');
+    void scan();
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+      recognizer.dispose();
+    };
+  }, [cameraActive]);
 
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
 
@@ -633,13 +638,10 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
         }
       }
 
-      // 2) Head pose & 6DoF monocular optical flow translation
+      // iPhone Safari has no ARKit world-position feed. Keep camera translation fixed so
+      // guessed optical-flow motion cannot make every placed object drift or wobble.
       tracker.getCameraQuaternion(camera.quaternion, now);
-      if (cameraActiveRef.current && frame % 3 === 0) {
-        const video = document.querySelector<HTMLVideoElement>('video[data-passthrough-video]');
-        opticalTracker.update(video, 0);
-        camera.position.copy(opticalTracker.translation);
-      }
+      camera.position.set(0, 0, 0);
       camera.updateMatrixWorld();
       const cam = cameraYawPitch(camera.quaternion);
       const forward = _v.set(0, 0, -1).applyQuaternion(camera.quaternion).clone();
@@ -1605,6 +1607,37 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
           } ${isMicroPinching ? 'is-pinching' : ''} ${handControlActive ? 'opacity-0' : ''}`}
         />
 
+        {cameraActive && recognitionStatus === 'loading' && !recognizedArtifact && (
+          <div className="absolute top-20 left-1/2 z-[54] -translate-x-1/2 rounded-full vision-glass px-3 py-1 text-[10px] text-white/75 pointer-events-none">
+            Preparing automatic artifact recognition…
+          </div>
+        )}
+        {cameraActive && recognitionStatus === 'unavailable' && !recognizedArtifact && (
+          <div className="absolute top-20 left-1/2 z-[54] -translate-x-1/2 rounded-full vision-glass px-3 py-1 text-[10px] text-amber-100 pointer-events-none">
+            Artifact recognition could not start. Check the connection and reload AR World.
+          </div>
+        )}
+        {recognizedArtifact && (
+          <div
+            dir="rtl"
+            className="absolute left-1/2 top-[34%] z-[54] w-[min(360px,88vw)] -translate-x-1/2 rounded-2xl vision-glass border border-emerald-300/50 bg-[#071322]/80 p-3 text-white shadow-xl pointer-events-none animate-in fade-in zoom-in-95 duration-200"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[9px] font-semibold tracking-wide text-emerald-200/90">ALQAMI · MATCHED ARTIFACT</div>
+                <div className="mt-0.5 truncate text-sm font-bold">{recognizedArtifact.artifact.title.ar}</div>
+                <div dir="ltr" className="truncate text-[10px] text-white/70">{recognizedArtifact.artifact.title.en}</div>
+              </div>
+              <span dir="ltr" className="shrink-0 rounded-full bg-emerald-300/15 px-2 py-1 text-[10px] font-semibold text-emerald-100">
+                {Math.round(recognizedArtifact.confidence * 100)}%
+              </span>
+            </div>
+            <div className="mt-2 border-t border-white/10 pt-2 text-[10px] leading-relaxed text-white/80">
+              {recognizedArtifact.artifact.period.ar} · {recognizedArtifact.artifact.details.material.ar}
+            </div>
+          </div>
+        )}
+
         {/* Spatial 360° Room Radar Mini-Map (awesome-arkit) */}
         <div
           className="spatial-radar-widget absolute top-3.5 right-4 z-[65] w-20 h-20 rounded-full vision-glass border border-white/25 flex items-center justify-center pointer-events-auto shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
@@ -1684,22 +1717,6 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
               title="Hand Tracking Pinch & Drag Gestures"
             >
               <Hand className="h-4 w-4" />
-            </button>
-          )}
-          {onToggleObjectTracking && (
-            <button
-              onClick={() => {
-                spatialSound.playPinchTap();
-                onToggleObjectTracking();
-              }}
-              className={`world-hud-btn ${
-                objectTracking3DActive
-                  ? 'bg-amber-500/40 text-amber-300 ring-1 ring-amber-400 shadow-[0_0_12px_rgba(245,190,70,0.6)]'
-                  : 'hover:bg-white/15'
-              }`}
-              title="Real-Life 3D Object Detection (detects room objects with 3D bounding boxes)"
-            >
-              <Scan className="h-4 w-4" />
             </button>
           )}
           <button onClick={() => placeObject()} className="world-hud-btn" title="Place a 3D object on the floor where you look">
