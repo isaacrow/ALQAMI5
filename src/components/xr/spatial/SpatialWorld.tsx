@@ -155,7 +155,7 @@ class OpticalFlowTracker {
       // Rebase during fast turns so rotational flow does not masquerade as translation.
       if (angularSpeed > 0.45) {
         this.velocity.multiplyScalar(0.72);
-        this.target.add(this.velocity).multiplyScalar(0.995).clampLength(0, 360);
+        this.target.add(this.velocity).multiplyScalar(0.995).clampLength(0, 1200);
         this.translation.lerp(this.target, 0.22);
         return;
       }
@@ -214,7 +214,7 @@ class OpticalFlowTracker {
       }
 
       this.velocity.multiplyScalar(0.82);
-      this.target.add(this.velocity).clampLength(0, 360);
+      this.target.add(this.velocity).clampLength(0, 1200);
       this.target.multiplyScalar(0.997);
       this.translation.lerp(this.target, 0.22);
     } catch {
@@ -414,6 +414,11 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
     const saved = Number(localStorage.getItem(LENS_KEY));
     return saved > 30 && saved < 120 ? saved : 69;
   });
+  const [trackingMode, setTrackingMode] = useState<'vision-pro' | 'slam-6dof'>(() => {
+    return (localStorage.getItem('spatial-world-tracking-mode') as any) || 'vision-pro';
+  });
+  const trackingModeRef = useRef(trackingMode);
+  trackingModeRef.current = trackingMode;
   const lensFovRef = useRef(lensFov);
   const [sensorState, setSensorState] = useState<'waiting' | 'live' | 'none'>('waiting');
   const [calibrateOpen, setCalibrateOpen] = useState(false);
@@ -765,12 +770,18 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
       const angularSpeed = previousCameraQuaternion.angleTo(camera.quaternion) / poseDt;
       previousCameraQuaternion.copy(camera.quaternion);
       lastCameraPoseTime = now;
-      if (frame % 3 === 0) {
-        const video = document.querySelector<HTMLVideoElement>('video[data-passthrough-video]');
-        if (cameraActiveRef.current) opticalTrackerRef.current!.update(video, angularSpeed);
-        else opticalTrackerRef.current!.reset();
+      const is6DoF = trackingModeRef.current === 'slam-6dof';
+      if (is6DoF) {
+        if (frame % 2 === 0) {
+          const video = document.querySelector<HTMLVideoElement>('video[data-passthrough-video]');
+          if (cameraActiveRef.current) opticalTrackerRef.current!.update(video, angularSpeed);
+          else opticalTrackerRef.current!.reset();
+        }
+        camera.position.copy(opticalTrackerRef.current!.translation);
+      } else {
+        opticalTrackerRef.current!.reset();
+        camera.position.set(0, 0, 0);
       }
-      camera.position.copy(opticalTrackerRef.current!.translation);
       camera.updateMatrixWorld();
       const cam = cameraYawPitch(camera.quaternion);
       const forward = _v.set(0, 0, -1).applyQuaternion(camera.quaternion).clone();
@@ -805,8 +816,16 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
           p.pose.yaw = wrapAngle(cam.yaw + p.carry.dYaw);
           p.pose.pitch = Math.max(-1.2, Math.min(1.2, cam.pitch + p.carry.dPitch));
         }
-        const k = p.carry ? 0.35 : 0.2;
-        p.shown.yaw = wrapAngle(p.shown.yaw + wrapAngle(p.pose.yaw - p.shown.yaw) * k);
+        // In Vision Pro mode: use heavy spring damping (k=0.12) to absorb hand shake
+        const isVp = trackingModeRef.current === 'vision-pro';
+        const k = p.carry ? 0.35 : isVp ? 0.12 : 0.22;
+        const diffYaw = wrapAngle(p.pose.yaw - p.shown.yaw);
+        // Small deadzone threshold (<0.15 deg) prevents micro-jitter when holding still
+        if (isVp && Math.abs(diffYaw) < 0.0026 && !p.carry) {
+          // Locked in place
+        } else {
+          p.shown.yaw = wrapAngle(p.shown.yaw + diffYaw * k);
+        }
         p.shown.pitch += (p.pose.pitch - p.shown.pitch) * k;
         p.shown.dist += (p.pose.dist - p.shown.dist) * k;
         applyPose(p.obj, p.shown);
@@ -1837,6 +1856,22 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
           )}
           <button onClick={recenter} className="world-hud-btn" title="Recenter: bring windows in front of you">
             <Crosshair className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => {
+              spatialSound.playPinchTap();
+              const nextMode = trackingMode === 'vision-pro' ? 'slam-6dof' : 'vision-pro';
+              setTrackingMode(nextMode);
+              localStorage.setItem('spatial-world-tracking-mode', nextMode);
+            }}
+            className={`world-hud-btn px-2.5 flex items-center gap-1.5 text-[10.5px] font-semibold tracking-wide transition-all ${
+              trackingMode === 'vision-pro'
+                ? 'bg-amber-400/35 text-amber-100 border border-amber-300/50 shadow-[0_0_12px_rgba(245,158,11,0.5)]'
+                : 'bg-cyan-500/35 text-cyan-100 border border-cyan-400/50 shadow-[0_0_12px_rgba(0,245,212,0.5)]'
+            }`}
+            title="Switch Mode: Vision Pro Heavy Glass vs 6DoF Physical Room Tracking"
+          >
+            <span>{trackingMode === 'vision-pro' ? '🥽 Vision Pro Solid' : '🌐 6DoF Room Track'}</span>
           </button>
           {onToggleHandTracking && (
             <button
