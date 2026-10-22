@@ -365,11 +365,14 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
   const [, setMountTick] = useState(0);
 
   const focusReticleRef = useRef<THREE.Group | null>(null);
+  const controlPointerRef = useRef<null | { x: number; y: number; lastSeen: number; active: boolean }>(null);
   const handOcclGroupRef = useRef<THREE.Group | null>(null);
   const opticalTrackerRef = useRef<OpticalFlowTracker>(new OpticalFlowTracker());
   const lastGazeIdRef = useRef<string | null>(null);
   const [gazeTargetId, setGazeTargetId] = useState<string | null>(null);
   const [isMicroPinching, setIsMicroPinching] = useState(false);
+  const [handControlActive, setHandControlActive] = useState(false);
+  const handControlActiveRef = useRef(false);
 
   const [immersionLevel, setImmersionLevel] = useState<number>(0);
   const immersionRef = useRef(immersionLevel);
@@ -425,8 +428,14 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
     // WebGL layer: real 3D objects + optional virtual environment.
     const glScene = new THREE.Scene();
     glSceneRef.current = glScene;
-    const gl = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-    gl.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    const mobileSafari = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const gl = new THREE.WebGLRenderer({
+      antialias: !mobileSafari,
+      alpha: true,
+      powerPreference: mobileSafari ? 'low-power' : 'high-performance',
+    });
+    gl.setPixelRatio(Math.min(mobileSafari ? 1.35 : 2, window.devicePixelRatio || 1));
     gl.setSize(w, h);
     gl.setClearColor(0x000000, 0);
     gl.outputColorSpace = THREE.SRGBColorSpace;
@@ -558,6 +567,23 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
     };
     window.addEventListener('visionos:micro-pinch', onMicroPinch);
 
+    const onControlPointer = (e: Event) => {
+      const detail = (e as CustomEvent<{ x?: number; y?: number; active?: boolean; source?: string }>).detail;
+      if (!Number.isFinite(detail?.x) || !Number.isFinite(detail?.y)) return;
+      const handActive = detail.active !== false && detail.source === 'hand';
+      if (handControlActiveRef.current !== handActive) {
+        handControlActiveRef.current = handActive;
+        setHandControlActive(handActive);
+      }
+      controlPointerRef.current = {
+        x: detail.x!,
+        y: detail.y!,
+        lastSeen: performance.now(),
+        active: detail.active !== false,
+      };
+    };
+    window.addEventListener('visionos:control-pointer', onControlPointer);
+
     const onResize = () => {
       const nw = window.innerWidth;
       const nh = window.innerHeight;
@@ -618,8 +644,17 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
       const cam = cameraYawPitch(camera.quaternion);
       const forward = _v.set(0, 0, -1).applyQuaternion(camera.quaternion).clone();
 
-      // 3) FocusEntity floor reticle & LiDAR laser distance tracking
-      const ray = new THREE.Ray(camera.position, forward);
+      // The hand/touch point is the placement target; use view center before input arrives.
+      const pointer = controlPointerRef.current;
+      const pointerFresh = pointer?.active && now - pointer.lastSeen < 1500;
+      let ray: THREE.Ray;
+      if (pointerFresh && pointer) {
+        const ndc = new THREE.Vector2((pointer.x / window.innerWidth) * 2 - 1, -(pointer.y / window.innerHeight) * 2 + 1);
+        raycaster.current.setFromCamera(ndc, camera);
+        ray = raycaster.current.ray;
+      } else {
+        ray = new THREE.Ray(camera.position, forward);
+      }
       if (ray.intersectPlane(floorPlane, floorHit) && floorHit.z < -100 && floorHit.length() < 5500) {
         focusReticle.visible = true;
         focusReticle.position.set(floorHit.x, -EYE_HEIGHT + 2, floorHit.z);
@@ -770,6 +805,7 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
       tracker.stop();
       window.removeEventListener('visionos:hand-landmarks', onHandLandmarks);
       window.removeEventListener('visionos:micro-pinch', onMicroPinch);
+      window.removeEventListener('visionos:control-pointer', onControlPointer);
       window.removeEventListener('visionos:gesture-peace', onGesturePeace);
       window.removeEventListener('visionos:gesture-thumbsup', onGestureThumbsUp);
       window.removeEventListener('resize', onResize);
@@ -1028,16 +1064,21 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
       const id = `obj-${Date.now()}`;
       const group = new THREE.Group();
       const itemLabel = artifactDetail?.label || 'Alqami Artifact';
+      let ornamentElement: HTMLDivElement | null = null;
+      let retryModelLoad: (() => void) | null = null;
 
       if (artifactDetail?.glb) {
         const loader = new GLTFLoader();
         const dracoLoader = new DRACOLoader();
         dracoLoader.setDecoderPath(assetUrl('draco/'));
         loader.setDRACOLoader(dracoLoader);
-
-        loader.load(
-          assetUrl(artifactDetail.glb),
+        retryModelLoad = () => loader.load(
+          assetUrl(artifactDetail.glb!),
           (gltf) => {
+            if (!group.parent) {
+              disposeThreeObject(gltf.scene);
+              return;
+            }
             const root = gltf.scene;
             const box = new THREE.Box3().setFromObject(root);
             const center = box.getCenter(new THREE.Vector3());
@@ -1048,14 +1089,21 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
             root.position.y += (size.y * baseScale) / 2;
             root.scale.setScalar(baseScale);
             group.add(root);
+            const label = ornamentElement?.querySelector<HTMLElement>('[data-span="label"]');
+            if (label) label.textContent = itemLabel;
+            const retryButton = ornamentElement?.querySelector<HTMLButtonElement>('[data-act="retry"]');
+            if (retryButton) retryButton.hidden = true;
           },
           undefined,
           () => {
-            const model = createLovbackenModel();
-            model.scale.setScalar(UNITS_PER_METER);
-            group.add(model);
+            if (!group.parent) return;
+            const label = ornamentElement?.querySelector<HTMLElement>('[data-span="label"]');
+            if (label) label.textContent = `${itemLabel} · model failed to load`;
+            const retryButton = ornamentElement?.querySelector<HTMLButtonElement>('[data-act="retry"]');
+            if (retryButton) retryButton.hidden = false;
           }
         );
+        retryModelLoad();
       } else {
         const model = createLovbackenModel();
         model.scale.setScalar(UNITS_PER_METER);
@@ -1084,8 +1132,10 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
         <button data-act="lower" title="Lower">⬇</button>
         <button data-act="rotate" aria-label="Rotate">⟲</button>
         <span data-span="label">${itemLabel}</span>
+        <button data-act="retry" title="Retry loading this model" hidden>↻</button>
         <button data-act="rdf" title="View RDF Metadata & 3D Detection" style="color: #6ee7b7; font-weight: bold; background: rgba(16, 185, 129, 0.3); border: 1px solid rgba(52, 211, 153, 0.5); border-radius: 9999px; padding: 2px 8px; font-size: 11px; cursor: pointer;">📜 RDF</button>
         <button data-act="remove" aria-label="Remove">✕</button>`;
+      ornamentElement = el;
       const ornament = new CSS3DObject(el);
       ornament.scale.setScalar(1.6);
       scene.add(ornament);
@@ -1121,7 +1171,13 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
       el.addEventListener('pointercancel', stopModelDrag);
       el.addEventListener('click', (ev) => {
         const act = (ev.target as HTMLElement).closest('button')?.dataset.act;
-        if (act === 'rotate') {
+        if (act === 'retry') {
+          const label = el.querySelector<HTMLElement>('[data-span="label"]');
+          if (label) label.textContent = `${itemLabel} · loading…`;
+          const retryButton = el.querySelector<HTMLButtonElement>('[data-act="retry"]');
+          if (retryButton) retryButton.hidden = true;
+          retryModelLoad?.();
+        } else if (act === 'rotate') {
           group.rotation.y += Math.PI / 8;
           spatialSound.playPinchTap();
         } else if (act === 'scale-up') {
@@ -1231,6 +1287,7 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
   const onBackgroundPointerDown = (e: React.PointerEvent) => {
     const camera = cameraRef.current;
     if (!camera) return;
+    controlPointerRef.current = { x: e.clientX, y: e.clientY, lastSeen: performance.now(), active: true };
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
 
     // 3D Spatial Air Drawing
@@ -1301,6 +1358,7 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
   const onBackgroundPointerMove = (e: React.PointerEvent) => {
     const camera = cameraRef.current;
     if (!camera) return;
+    controlPointerRef.current = { x: e.clientX, y: e.clientY, lastSeen: performance.now(), active: true };
 
     // 3D Air Drawing in real room space
     if (airPenActiveRef.current && activeStrokeRef.current) {
@@ -1544,7 +1602,7 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
         <div
           className={`spatial-gaze-reticle pointer-events-none ${
             gazeTargetId ? 'has-target' : ''
-          } ${isMicroPinching ? 'is-pinching' : ''}`}
+          } ${isMicroPinching ? 'is-pinching' : ''} ${handControlActive ? 'opacity-0' : ''}`}
         />
 
         {/* Spatial 360° Room Radar Mini-Map (awesome-arkit) */}

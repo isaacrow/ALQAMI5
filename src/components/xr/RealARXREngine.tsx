@@ -128,6 +128,9 @@ function paintHandCursor(
   pinching: boolean
 ) {
   if (!cursor) return;
+  window.dispatchEvent(new CustomEvent('visionos:control-pointer', {
+    detail: { x, y, active: visible, source: 'hand' },
+  }));
   cursor.style.transform = `translate3d(${x - 18}px, ${y - 18}px, 0)`;
   cursor.style.opacity = visible ? '1' : '0';
   const ring = cursor.firstElementChild as HTMLElement | null;
