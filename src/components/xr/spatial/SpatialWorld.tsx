@@ -604,7 +604,6 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
     let raf = 0;
     let frame = 0;
     let lastFov = 0;
-    const opticalTracker = opticalTrackerRef.current;
     const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), EYE_HEIGHT);
     const floorHit = new THREE.Vector3();
     const mountTime = performance.now();
