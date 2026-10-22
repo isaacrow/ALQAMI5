@@ -108,9 +108,9 @@ function cameraYawPitch(q: THREE.Quaternion) {
 }
 
 /**
- * Estimates small camera translations from the passthrough video. This is a visual
- * parallax hint, not ARKit tracking: robust frame matching keeps the old movement feel
- * while confidence checks and a soft return prevent noise from accumulating as drift.
+ * Estimates small camera translations from passthrough video. This is visual parallax,
+ * not ARKit tracking. Subpixel flow preserves responsive movement; robust averaging,
+ * gyro gating, damping, and a bounded range reduce the old jitter and drift.
  */
 class OpticalFlowTracker {
   private readonly width = 64;
@@ -118,6 +118,7 @@ class OpticalFlowTracker {
   private readonly canvas = document.createElement('canvas');
   private readonly ctx = this.canvas.getContext('2d', { willReadFrequently: true });
   private previous: Float32Array | null = null;
+  private readonly velocity = new THREE.Vector3();
   private readonly target = new THREE.Vector3();
   readonly translation = new THREE.Vector3();
 
@@ -128,6 +129,7 @@ class OpticalFlowTracker {
 
   reset() {
     this.previous = null;
+    this.velocity.multiplyScalar(0.5);
   }
 
   update(video: HTMLVideoElement | null, angularSpeed: number) {
@@ -150,76 +152,71 @@ class OpticalFlowTracker {
       this.previous = current;
       if (!previous) return;
 
-      // Rotation dominates image motion on a phone. Rebase during turns rather than
-      // mistaking the turn for a sideways/vertical walk through the scene.
+      // Rebase during fast turns so rotational flow does not masquerade as translation.
       if (angularSpeed > 0.45) {
-        this.target.multiplyScalar(0.985);
-        this.translation.lerp(this.target, 0.16);
+        this.velocity.multiplyScalar(0.72);
+        this.target.add(this.velocity).multiplyScalar(0.995).clampLength(0, 360);
+        this.translation.lerp(this.target, 0.22);
         return;
       }
 
-      let variance = 0;
-      for (let y = 8; y < this.height - 8; y += 4) {
-        for (let x = 8; x < this.width - 8; x += 4) {
-          const value = current[y * this.width + x];
-          variance += value * value;
-        }
-      }
-      if (variance < 5000) {
-        this.target.multiplyScalar(0.995);
-        this.translation.lerp(this.target, 0.16);
-        return;
-      }
+      const flowX: number[] = [];
+      const flowY: number[] = [];
+      for (let y = 4; y < this.height - 4; y += 3) {
+        for (let x = 4; x < this.width - 4; x += 3) {
+          const i = y * this.width + x;
+          const ix = (previous[i + 1] - previous[i - 1]) * 0.5;
+          const iy = (previous[i + this.width] - previous[i - this.width]) * 0.5;
+          const gradientSq = ix * ix + iy * iy;
+          if (gradientSq < 36) continue;
 
-      let bestDx = 0;
-      let bestDy = 0;
-      let bestCost = Infinity;
-      let zeroCost = Infinity;
-      let secondCost = Infinity;
-      for (let dy = -4; dy <= 4; dy += 1) {
-        for (let dx = -5; dx <= 5; dx += 1) {
-          let cost = 0;
-          let count = 0;
-          for (let y = 8; y < this.height - 8; y += 3) {
-            const row = y * this.width;
-            for (let x = 8; x < this.width - 8; x += 3) {
-              const a = current[row + x];
-              const b = previous[(y + dy) * this.width + x + dx];
-              cost += Math.abs(a - b);
-              count += 1;
-            }
-          }
-          cost /= count;
-          if (dx === 0 && dy === 0) zeroCost = cost;
-          if (cost < bestCost) {
-            secondCost = bestCost;
-            bestCost = cost;
-            bestDx = dx;
-            bestDy = dy;
-          } else if (cost < secondCost) {
-            secondCost = cost;
-          }
+          const temporal = current[i] - previous[i];
+          const dx = (-temporal * ix) / gradientSq;
+          const dy = (-temporal * iy) / gradientSq;
+          if (!Number.isFinite(dx) || !Number.isFinite(dy) || Math.abs(dx) > 1.5 || Math.abs(dy) > 1.5) continue;
+          flowX.push(dx);
+          flowY.push(dy);
         }
       }
 
-      // Require a clear improvement over no movement and a distinct match. This
-      // suppresses flicker from lighting changes and low-texture camera frames.
-      const distinctMatch = secondCost === Infinity || bestCost < secondCost * 0.995;
-      const confident = bestCost < zeroCost * 0.92 && zeroCost - bestCost > 2.2 && distinctMatch;
-      if (confident) {
-        const px = Math.abs(bestDx) <= 1 ? 0 : bestDx;
-        const py = Math.abs(bestDy) <= 1 ? 0 : bestDy;
-        // Image motion is opposite camera motion. At this resolution a small scale
-        // factor makes translation visible without the old runaway velocity buildup.
-        this.target.x = THREE.MathUtils.clamp(this.target.x - px * 14, -360, 360);
-        this.target.y = THREE.MathUtils.clamp(this.target.y + py * 14, -360, 360);
+      if (flowX.length >= 8) {
+        const median = (values: number[]) => {
+          values.sort((a, b) => a - b);
+          const mid = Math.floor(values.length / 2);
+          return values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) * 0.5;
+        };
+        const medianX = median([...flowX]);
+        const medianY = median([...flowY]);
+        const deviations = flowX.map((x, i) => Math.hypot(x - medianX, flowY[i] - medianY));
+        const mad = median(deviations);
+        const maxDeviation = Math.max(0.12, mad * 2.5);
+        let dxSum = 0;
+        let dySum = 0;
+        let inliers = 0;
+        for (let i = 0; i < flowX.length; i += 1) {
+          if (deviations[i] > maxDeviation) continue;
+          dxSum += flowX[i];
+          dySum += flowY[i];
+          inliers += 1;
+        }
+        if (inliers >= 5) {
+          const dx = dxSum / inliers;
+          const dy = dySum / inliers;
+          if (Math.abs(dx) > 0.015 || Math.abs(dy) > 0.015) {
+            // Camera motion is opposite image motion. Keep a damped velocity estimate
+            // so subpixel movement remains responsive without amplifying single-frame noise.
+            this.velocity.x += -dx * 10;
+            this.velocity.y += dy * 10;
+          }
+        }
       } else {
-        this.target.multiplyScalar(0.997);
+        this.velocity.multiplyScalar(0.88);
       }
 
-      // Slowly release accumulated parallax while still preserving deliberate movement.
-      this.target.multiplyScalar(0.9995);
-      this.translation.lerp(this.target, 0.2);
+      this.velocity.multiplyScalar(0.82);
+      this.target.add(this.velocity).clampLength(0, 360);
+      this.target.multiplyScalar(0.997);
+      this.translation.lerp(this.target, 0.22);
     } catch {
       // Safari can briefly reject canvas reads while camera frames are changing.
       this.reset();
