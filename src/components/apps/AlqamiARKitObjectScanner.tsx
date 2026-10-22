@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import jsQR from 'jsqr';
 import * as THREE from 'three';
 import {
   X,
@@ -39,7 +40,6 @@ interface AlqamiARKitObjectScannerProps {
   onClose: () => void;
   onDeployInSpace?: (artifact: AlqamiArtifact) => void;
   onOpenDetail?: (artifact: AlqamiArtifact) => void;
-  initialMode?: 'detect' | 'scan';
 }
 
 export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> = ({
@@ -47,16 +47,15 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
   onClose,
   onDeployInSpace,
   onOpenDetail,
-  initialMode = 'scan',
 }) => {
   // Modes: 'detect' (Apple ARKit Object Detection & RDF Recall) | 'scan' (Apple ARKit Object Scanning & Give Metadata)
-  const [activeMode, setActiveMode] = useState<'detect' | 'scan'>(initialMode);
+  const [activeMode, setActiveMode] = useState<'detect' | 'scan'>('detect');
 
   // Detection state
   const referenceObjects = getAllReferenceObjects();
   const [selectedTargetIndex, setSelectedTargetIndex] = useState(0);
   const [activeRdfTab, setActiveRdfTab] = useState<'summary' | 'transcription' | 'turtle' | 'bibframe'>('summary');
-  const [confidence, setConfidence] = useState(0.96);
+  const [scanMessage, setScanMessage] = useState('وجه الكاميرا نحو رمز القطعة');
   const [copiedRdf, setCopiedRdf] = useState(false);
   const [isLockedOnObject, setIsLockedOnObject] = useState(true);
 
@@ -89,18 +88,9 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
 
   const [savedSuccessToast, setSavedSuccessToast] = useState(false);
 
-  useEffect(() => {
-    if (isOpen) {
-      setActiveMode(initialMode);
-      if (initialMode === 'scan') {
-        setScanStep(2);
-        setIsScanningActive(true);
-      }
-    }
-  }, [isOpen, initialMode]);
-
   // Video and Three.js 3D Viewport refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const threeMountRef = useRef<HTMLDivElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number>(0);
@@ -114,6 +104,54 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
   const originAxesRef = useRef<THREE.Group | null>(null);
 
   const activeTarget = referenceObjects[selectedTargetIndex] || referenceObjects[0];
+
+  // Decode real QR codes from the live camera. QR payloads may be an artifact ID,
+  // slug, or an Alqami artifact URL containing ?artifact=<id>.
+  useEffect(() => {
+    if (!isOpen || activeMode !== 'detect') return;
+    let disposed = false;
+    const canvas = qrCanvasRef.current;
+    const context = canvas?.getContext('2d', { willReadFrequently: true });
+    if (!canvas || !context) return;
+
+    const timer = window.setInterval(() => {
+      const video = videoRef.current;
+      if (disposed || !video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+
+      const scale = Math.min(1, 720 / video.videoWidth);
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(pixels.data, pixels.width, pixels.height, { inversionAttempts: 'attemptBoth' });
+      if (!code) return;
+
+      const payload = code.data.trim();
+      let lookup = payload.replace(/^ALQAMI:/i, '').trim();
+      try {
+        const url = new URL(payload);
+        lookup = url.searchParams.get('artifact') || decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || lookup);
+      } catch {
+        // A plain artifact ID or slug is also a valid QR payload.
+      }
+      const targetIndex = referenceObjects.findIndex((item) =>
+        [item.id, item.slug].some((value) => value.toLowerCase() === lookup.toLowerCase())
+      );
+
+      if (targetIndex >= 0) {
+        setSelectedTargetIndex(targetIndex);
+        setIsLockedOnObject(true);
+        setScanMessage('تم التعرّف على رمز القطعة');
+      } else {
+        setScanMessage(`رمز غير موجود في السجل: ${payload.slice(0, 48)}`);
+      }
+    }, 180);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [isOpen, activeMode]);
 
   // Camera stream setup
   useEffect(() => {
@@ -457,7 +495,7 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
         {/* Apple ARKit Branding Badge */}
         <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full vision-glass border border-emerald-400/40 text-xs font-semibold text-emerald-300 shadow-[0_0_20px_rgba(52,211,153,0.35)]">
           <Scan className="w-4 h-4 animate-pulse text-emerald-300" />
-          <span>Apple ARKit 3D Object Scanner & RDF Recall</span>
+          <span>مسح رمز القطعة وبياناتها • Camera QR scanner</span>
         </div>
 
         {/* Mode Selector Toggle: Detect vs Scan */}
@@ -474,7 +512,7 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>كشف واسترجاع RDF (Detect & Recall)</span>
+            <span>مسح رمز الفهرس (Scan catalog code)</span>
           </button>
 
           <button
@@ -490,7 +528,7 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
             }`}
           >
             <Box className="w-3.5 h-3.5" />
-            <span>مسح وتوثيق جديد (ARKit Scan 3D)</span>
+            <span>إضافة سجل بيانات (Add metadata record)</span>
           </button>
         </div>
 
@@ -514,6 +552,18 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
           autoPlay
           className="w-full h-full object-cover pointer-events-none"
         />
+
+        <canvas ref={qrCanvasRef} className="hidden" aria-hidden="true" />
+        {activeMode === 'detect' && (
+          <>
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full vision-glass border border-white/20 bg-black/65 text-white text-xs text-center max-w-[92%] pointer-events-none">
+              {scanMessage}
+            </div>
+            <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center">
+              <div className="w-56 h-40 border-2 border-emerald-300/80 rounded-2xl shadow-[0_0_28px_rgba(52,211,153,0.3)]" />
+            </div>
+          </>
+        )}
 
         {/* Interactive Three.js 3D Canvas Mount (3D Bounding Box, Point Cloud, Origin Axes) */}
         <div ref={threeMountRef} className="absolute inset-0 w-full h-full pointer-events-auto" />
@@ -545,7 +595,7 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
 
               <div className="text-left font-mono">
                 <span className="text-xs font-bold text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full border border-emerald-400/30">
-                  {Math.round(confidence * 100)}% ARKit Match
+                  {activeTarget.isCustom ? 'سجل مخصص' : 'سجل فهرس'}
                 </span>
                 <div className="text-[9px] text-white/50 pt-0.5">
                   {activeTarget.defaultBox.widthCm}×{activeTarget.defaultBox.heightCm}×{activeTarget.defaultBox.depthCm} cm
@@ -719,7 +769,7 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
         {activeMode === 'detect' && (
           <div className="flex items-center justify-between gap-3 overflow-x-auto py-1 custom-scrollbar">
             <span className="text-xs font-bold text-white/80 whitespace-nowrap pl-1">
-              القطع المتعرفة (Detected Reference Targets):
+              السجلات المتاحة للمعاينة (Catalog records):
             </span>
             <div className="flex items-center gap-2">
               {referenceObjects.slice(0, 6).map((refObj, idx) => (

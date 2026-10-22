@@ -402,7 +402,7 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
   const airStrokesGroupRef = useRef<THREE.Group | null>(null);
   const activeStrokeRef = useRef<{ line: THREE.Line; points: THREE.Vector3[] } | null>(null);
 
-  const [sulyapAiActive, setSulyapAiActive] = useState(false);
+  const [sulyapAiActive, setSulyapAiActive] = useState(true);
   const sulyapAiActiveRef = useRef(sulyapAiActive);
   sulyapAiActiveRef.current = sulyapAiActive;
   const [sulyapHotspots, setSulyapHotspots] = useState<CulturalHeritageHotspot[]>([]);

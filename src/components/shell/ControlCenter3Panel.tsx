@@ -20,11 +20,10 @@ import {
   Compass,
   Sparkles,
   Crosshair,
-  Globe,
 } from 'lucide-react';
 import { AppId, EnvironmentId } from '../../types/spatial';
 import { spatialSound } from '../../utils/spatialSound';
-import { AlqamiLogoSvg } from '../common/AlqamiLogoSvg';
+import { assetUrl } from '../../utils/assetUrl';
 
 interface ControlCenter3PanelProps {
   isOpen: boolean;
@@ -125,59 +124,60 @@ export const ControlCenter3Panel: React.FC<ControlCenter3PanelProps> = ({
             </div>
           </div>
 
-          {/* Middle Alqami iPhone AR World Card (Replaces Kehlani card with SVG icon & text saying alqami with its logo) */}
-          <button
+          {/* Middle Card: Alqami iPhone AR World Controller (Image 6) */}
+          <div
             onClick={() => {
               spatialSound.playAlqamiChime();
               onToggleSpatialWorld?.();
             }}
-            className={`w-full rounded-[24px] p-3.5 flex flex-col gap-2.5 text-left transition-all duration-300 border cursor-pointer ${
+            className={`rounded-[24px] transition-all duration-300 p-3.5 flex flex-col justify-between gap-3 cursor-pointer active:scale-98 select-none ${
               spatialWorldActive
-                ? 'bg-gradient-to-br from-amber-500/25 via-blue-600/30 to-black/60 border-amber-400/60 shadow-[0_0_24px_rgba(245,190,70,0.4)] ring-1 ring-amber-300'
-                : 'bg-black/30 hover:bg-black/45 border-white/10 hover:border-white/20'
+                ? 'bg-amber-500/15 border-2 border-amber-400/90 shadow-[0_0_24px_rgba(245,158,11,0.35)]'
+                : 'bg-black/35 hover:bg-black/50 border border-white/15'
             }`}
-            title="iPhone AR World — Every window and 3D object in its own physical place in your real room"
           >
+            {/* Top row: Alqami Logo from alqami3 + Title + Subtitle */}
             <div className="flex items-center gap-3">
-              <div
-                className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-300 ${
-                  spatialWorldActive
-                    ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-stone-950 shadow-[0_0_16px_rgba(251,191,36,0.65)] scale-105'
-                    : 'bg-white/10 text-amber-300 border border-white/10'
-                }`}
-              >
-                <AlqamiLogoSvg className="w-6 h-6" />
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 shrink-0 flex items-center justify-center shadow-lg shadow-amber-500/25 p-1.5 overflow-hidden">
+                <img
+                  src={assetUrl('logo.png')}
+                  alt="Alqami Logo"
+                  className="w-full h-full object-contain drop-shadow"
+                />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[14px] font-bold text-white tracking-wide">علقمي · ALQAMI</span>
+                <div className="text-[14px] font-bold text-white tracking-wide truncate">
+                  ALQAMI · علقمي
                 </div>
-                <div className="text-[12px] text-amber-200/90 font-medium flex items-center gap-1.5 mt-0.5">
-                  <Globe className="w-3.5 h-3.5 text-blue-300" />
-                  <span>iPhone AR World</span>
+                <div className="text-[12px] text-amber-300 font-medium flex items-center gap-1">
+                  <span>🌐 iPhone AR World</span>
                 </div>
               </div>
             </div>
 
-            {/* Status Pill Indicator */}
-            <div className="flex items-center justify-between pt-1 border-t border-white/10">
-              <span
-                className={`text-[11px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1.5 ${
+            {/* Bottom row: Active in Room / Vision Pro Mode status pill */}
+            <div className="pt-0.5">
+              <div
+                className={`w-full py-1.5 px-3 rounded-full text-xs font-semibold flex items-center justify-between transition-all ${
                   spatialWorldActive
-                    ? 'bg-amber-400/25 text-amber-200 border border-amber-300/40'
-                    : 'bg-white/10 text-white/70'
+                    ? 'bg-amber-400/30 text-amber-100 border border-amber-300/50 shadow-inner'
+                    : 'bg-white/10 text-white/75 hover:bg-white/15'
                 }`}
               >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    spatialWorldActive ? 'bg-amber-300 animate-pulse' : 'bg-white/40'
-                  }`}
-                />
-                {spatialWorldActive ? 'Active in Room' : 'Tap to Enter AR'}
-              </span>
-              <span className="text-[10px] text-white/50 font-mono">Vision Pro Mode</span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      spatialWorldActive
+                        ? 'bg-amber-400 animate-pulse shadow-[0_0_8px_#f59e0b]'
+                        : 'bg-white/40'
+                    }`}
+                  />
+                  <span>{spatialWorldActive ? 'Active in Room' : 'Activate AR World'}</span>
+                </div>
+                <span className="text-[10.5px] opacity-75 font-normal">Vision Pro Mode</span>
+              </div>
             </div>
-          </button>
+          </div>
 
           {/* Bottom 3 Notifications Pill */}
           <button
@@ -267,15 +267,6 @@ export const ControlCenter3Panel: React.FC<ControlCenter3PanelProps> = ({
           {/* Middle Action List */}
           <div className="rounded-[24px] bg-black/25 border border-white/10 py-1.5 px-2 flex flex-col gap-0.5 my-2 flex-1 justify-center">
             {[
-              {
-                id: 'arworld',
-                label: spatialWorldActive ? '🌐 iPhone AR World (Active)' : '🌐 iPhone AR World',
-                icon: Globe,
-                action: () => {
-                  spatialSound.playAlqamiChime();
-                  onToggleSpatialWorld?.();
-                },
-              },
               {
                 id: 'alqami',
                 label: alqamiModeActive ? '✨ Alqami AR (Active)' : '✨ Alqami AR Mode',

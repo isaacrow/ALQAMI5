@@ -303,12 +303,26 @@ export function App() {
 
   useEffect(() => {
     const onOpenScanner = () => setIsArkitScannerOpen(true);
-    window.addEventListener('visionos:open-arkit-scanner', onOpenScanner);
-    window.addEventListener('visionos:enter-alqami-ar', onOpenScanner);
-    return () => {
-      window.removeEventListener('visionos:open-arkit-scanner', onOpenScanner);
-      window.removeEventListener('visionos:enter-alqami-ar', onOpenScanner);
-    };
+    window.addEventListener('visionos:open-arkit-scanner', onOpenScanner);  const handleToggleSpatialWorld = async () => {
+    spatialSound.playAlqamiChime();
+    const next = !xrState.spatialWorldActive;
+    if (next) {
+      await requestMotionPermission();
+      if (!xrState.cameraActive) {
+        window.dispatchEvent(new Event('visionos:toggle-camera'));
+      }
+    }
+    setXrState((prev) => ({
+      ...prev,
+      spatialWorldActive: next,
+      cameraActive: next ? true : prev.cameraActive,
+      gyroActive: next ? true : prev.gyroActive,
+      alqamiModeActive: next ? true : prev.alqamiModeActive,
+      objectTracking3DActive: next ? true : prev.objectTracking3DActive,
+    }));
+  };
+
+  return () => window.removeEventListener('visionos:open-arkit-scanner', onOpenScanner);
   }, []);
 
   // Spatial 3D Keyboard State & Synced App Text
@@ -322,14 +336,50 @@ export function App() {
   const customKeyboardCallbackRef = useRef<((v: string) => void) | null>(null);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setCurrentTime(new Date()), 30_000);
-    return () => window.clearInterval(timer);
+    const timer = window.setInterval(() => setCurrentTime(new Date()), 30_000);  const handleToggleSpatialWorld = async () => {
+    spatialSound.playAlqamiChime();
+    const next = !xrState.spatialWorldActive;
+    if (next) {
+      await requestMotionPermission();
+      if (!xrState.cameraActive) {
+        window.dispatchEvent(new Event('visionos:toggle-camera'));
+      }
+    }
+    setXrState((prev) => ({
+      ...prev,
+      spatialWorldActive: next,
+      cameraActive: next ? true : prev.cameraActive,
+      gyroActive: next ? true : prev.gyroActive,
+      alqamiModeActive: next ? true : prev.alqamiModeActive,
+      objectTracking3DActive: next ? true : prev.objectTracking3DActive,
+    }));
+  };
+
+  return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
     document.body.classList.toggle('webxr-active', xrState.webxrSessionActive);
-    document.body.classList.toggle('camera-passthrough-active', xrState.cameraActive || Boolean(xrState.spatialWorldActive));
-    return () => {
+    document.body.classList.toggle('camera-passthrough-active', xrState.cameraActive || Boolean(xrState.spatialWorldActive));  const handleToggleSpatialWorld = async () => {
+    spatialSound.playAlqamiChime();
+    const next = !xrState.spatialWorldActive;
+    if (next) {
+      await requestMotionPermission();
+      if (!xrState.cameraActive) {
+        window.dispatchEvent(new Event('visionos:toggle-camera'));
+      }
+    }
+    setXrState((prev) => ({
+      ...prev,
+      spatialWorldActive: next,
+      cameraActive: next ? true : prev.cameraActive,
+      gyroActive: next ? true : prev.gyroActive,
+      alqamiModeActive: next ? true : prev.alqamiModeActive,
+      objectTracking3DActive: next ? true : prev.objectTracking3DActive,
+    }));
+  };
+
+  return () => {
       document.body.classList.remove('webxr-active', 'camera-passthrough-active');
     };
   }, [xrState.webxrSessionActive, xrState.cameraActive, xrState.spatialWorldActive]);
@@ -489,8 +539,26 @@ export function App() {
       }
     };
 
-    window.addEventListener('keydown', handleShortcut);
-    return () => window.removeEventListener('keydown', handleShortcut);
+    window.addEventListener('keydown', handleShortcut);  const handleToggleSpatialWorld = async () => {
+    spatialSound.playAlqamiChime();
+    const next = !xrState.spatialWorldActive;
+    if (next) {
+      await requestMotionPermission();
+      if (!xrState.cameraActive) {
+        window.dispatchEvent(new Event('visionos:toggle-camera'));
+      }
+    }
+    setXrState((prev) => ({
+      ...prev,
+      spatialWorldActive: next,
+      cameraActive: next ? true : prev.cameraActive,
+      gyroActive: next ? true : prev.gyroActive,
+      alqamiModeActive: next ? true : prev.alqamiModeActive,
+      objectTracking3DActive: next ? true : prev.objectTracking3DActive,
+    }));
+  };
+
+  return () => window.removeEventListener('keydown', handleShortcut);
   }, [openSingleOrFocusApp]);
 
   // Environment backdrop selection (shown when the camera view is off).
@@ -558,8 +626,26 @@ export function App() {
               { icon: Heart, active: false, dot: true },
               { icon: ShoppingBag, active: false },
             ].map((item, idx) => {
-              const Icon = item.icon;
-              return (
+              const Icon = item.icon;  const handleToggleSpatialWorld = async () => {
+    spatialSound.playAlqamiChime();
+    const next = !xrState.spatialWorldActive;
+    if (next) {
+      await requestMotionPermission();
+      if (!xrState.cameraActive) {
+        window.dispatchEvent(new Event('visionos:toggle-camera'));
+      }
+    }
+    setXrState((prev) => ({
+      ...prev,
+      spatialWorldActive: next,
+      cameraActive: next ? true : prev.cameraActive,
+      gyroActive: next ? true : prev.gyroActive,
+      alqamiModeActive: next ? true : prev.alqamiModeActive,
+      objectTracking3DActive: next ? true : prev.objectTracking3DActive,
+    }));
+  };
+
+  return (
                 <button
                   key={idx}
                   onClick={() => spatialSound.playPinchTap()}
@@ -806,7 +892,7 @@ export function App() {
           {currentEnv === 'living-room' && (
             <img
               data-room-bg="true"
-              src={assetUrl('images/custom_room_bg.png')}
+              src="/images/custom_room_bg.png"
               alt="Warm Living Room with Fireplace"
               className="w-full h-full object-cover brightness-[0.92]"
             />
@@ -885,7 +971,24 @@ export function App() {
         <div className="pointer-events-auto">{renderKeyboard()}</div>
       </div>
     </div>
-  );
+  );  const handleToggleSpatialWorld = async () => {
+    spatialSound.playAlqamiChime();
+    const next = !xrState.spatialWorldActive;
+    if (next) {
+      await requestMotionPermission();
+      if (!xrState.cameraActive) {
+        window.dispatchEvent(new Event('visionos:toggle-camera'));
+      }
+    }
+    setXrState((prev) => ({
+      ...prev,
+      spatialWorldActive: next,
+      cameraActive: next ? true : prev.cameraActive,
+      gyroActive: next ? true : prev.gyroActive,
+      alqamiModeActive: next ? true : prev.alqamiModeActive,
+      objectTracking3DActive: next ? true : prev.objectTracking3DActive,
+    }));
+  };
 
   return (
     <div
@@ -934,8 +1037,8 @@ export function App() {
             <span>{currentTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
             <ChevronDown className="w-3.5 h-3.5" />
           </button>
-        </div>
 
+                  </div>
       </div>
 
       {/* Spatial Stage: either standard CSS 3D stage or iPhone Safari Real AR XR World */}
@@ -1034,36 +1137,16 @@ export function App() {
         onToggleRealCamera={() => window.dispatchEvent(new Event('visionos:toggle-camera'))}
         realCameraActive={xrState.cameraActive}
         spatialWorldActive={xrState.spatialWorldActive}
-        onToggleSpatialWorld={async () => {
-          spatialSound.playAlqamiChime();
-          const next = !xrState.spatialWorldActive;
-          if (next) {
-            await requestMotionPermission();
-            if (!xrState.cameraActive) {
-              window.dispatchEvent(new Event('visionos:toggle-camera'));
-            }
-          }
-          setXrState((prev) => ({
-            ...prev,
-            spatialWorldActive: next,
-            cameraActive: next ? true : prev.cameraActive,
-            gyroActive: next ? true : prev.gyroActive,
-          }));
-        }}
+        onToggleSpatialWorld={handleToggleSpatialWorld}
         alqamiModeActive={xrState.alqamiModeActive}
-        onToggleAlqamiMode={() => {
-          spatialSound.playAlqamiChime();
-          const next = !xrState.alqamiModeActive;
+        onToggleAlqamiMode={() =>
           setXrState((prev) => ({
             ...prev,
-            alqamiModeActive: next,
-            cameraActive: next ? true : prev.cameraActive,
-            gyroActive: next ? true : prev.gyroActive,
-          }));
-          if (next) {
-            setIsArkitScannerOpen(true);
-          }
-        }}
+            alqamiModeActive: !prev.alqamiModeActive,
+            cameraActive: !prev.alqamiModeActive ? true : prev.cameraActive,
+            gyroActive: !prev.alqamiModeActive ? true : prev.gyroActive,
+          }))
+        }
         objectTracking3DActive={xrState.objectTracking3DActive}
         onToggle3DObjectTracking={() =>
           setXrState((prev) => ({
@@ -1079,7 +1162,6 @@ export function App() {
         <Suspense fallback={null}>
           <AlqamiARKitObjectScanner
             isOpen={isArkitScannerOpen}
-            initialMode="scan"
             onClose={() => setIsArkitScannerOpen(false)}
             onDeployInSpace={(art) => {
               window.dispatchEvent(

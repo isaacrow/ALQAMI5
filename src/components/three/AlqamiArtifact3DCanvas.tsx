@@ -46,33 +46,35 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     renderer.setSize(width, height);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.45;
+    renderer.toneMappingExposure = 1.35;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.replaceChildren(renderer.domElement);
 
-    // Physically-based studio environment reflections for authentic gold & metals
-    const pmremGen = new THREE.PMREMGenerator(renderer);
-    pmremGen.compileEquirectangularShader();
-    const envRoom = new RoomEnvironment();
-    const envTexture = pmremGen.fromScene(envRoom, 0.04).texture;
-    scene.environment = envTexture;
-    pmremGen.dispose();
+    // Realistic PBR Environment Map (from RoomEnvironment for glowing metallic/gold reflections)
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    pmremGenerator.compileEquirectangularShader();
+    const roomEnv = pmremGenerator.fromScene(new RoomEnvironment()).texture;
+    scene.environment = roomEnv;
 
-    // Studio Museum Lights: bright, warm key and balanced fill for true material sheen
-    const ambient = new THREE.AmbientLight(0xffffff, 1.6);
+    // Enhanced Museum Studio Lighting (Warm Key, Cool Fill, Gold Specular Highlights)
+    const ambient = new THREE.AmbientLight(0xffffff, 1.8);
     scene.add(ambient);
 
-    const dirLight = new THREE.DirectionalLight(0xfffbf2, 2.6);
-    dirLight.position.set(2.5, 4.5, 3.5);
-    scene.add(dirLight);
+    const keyLight = new THREE.DirectionalLight(0xfffaec, 2.8);
+    keyLight.position.set(2.5, 4.5, 3.5);
+    scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0xf2f6ff, 1.5);
-    fillLight.position.set(-3, 2, 2.5);
+    const fillLight = new THREE.DirectionalLight(0xb2d2ff, 1.5);
+    fillLight.position.set(-3.5, 2.0, 2.0);
     scene.add(fillLight);
 
-    const rimLight = new THREE.DirectionalLight(0xfff3e0, 1.2);
-    rimLight.position.set(0, 3, -3);
-    scene.add(rimLight);
+    const goldAccentLight = new THREE.DirectionalLight(0xffdf80, 1.6);
+    goldAccentLight.position.set(0, 3.5, -3.0);
+    scene.add(goldAccentLight);
+
+    const pointLight = new THREE.PointLight(0xffe6a3, 1.5, 6);
+    pointLight.position.set(0, 0.8, 1.5);
+    scene.add(pointLight);
 
     // Floor contact shadow
     const shadowGeo = new THREE.PlaneGeometry(1.8, 1.8);
@@ -109,6 +111,28 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
         const root = gltf.scene;
 
         root.updateMatrixWorld(true);
+        root.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            if (mesh.material) {
+              const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+              materials.forEach((mat) => {
+                if ('envMapIntensity' in mat) {
+                  (mat as THREE.MeshStandardMaterial).envMapIntensity = 1.45;
+                }
+                if ('roughness' in mat && typeof (mat as THREE.MeshStandardMaterial).roughness === 'number') {
+                  const m = mat as THREE.MeshStandardMaterial;
+                  if (m.metalness > 0.3) {
+                    m.roughness = Math.max(0.12, m.roughness * 0.9);
+                  }
+                }
+                mat.needsUpdate = true;
+              });
+            }
+          }
+        });
         const box = new THREE.Box3().setFromObject(root);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
@@ -187,8 +211,8 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
       prevX = e.clientX;
       prevY = e.clientY;
 
-      baseRotY += dx * 0.015;
-      baseRotX = Math.max(-1.25, Math.min(1.25, baseRotX + dy * 0.015));
+      baseRotY += dx * 0.007;
+      baseRotX = Math.max(-1.25, Math.min(1.25, baseRotX + dy * 0.007));
     };
 
     const onPointerUp = (e: PointerEvent) => {
@@ -221,11 +245,13 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
       const time = performance.now() * 0.001;
 
       if (modeRef.current === 'card') {
-        curRotY += (baseRotY - curRotY) * 0.12;
-        curRotX += (baseRotX - curRotX) * 0.12;
-        modelRoot.rotation.y = curRotY;
-        modelRoot.rotation.x = curRotX;
-        renderer.render(scene, camera);
+        if (isDragging) {
+          curRotY += (baseRotY - curRotY) * 0.15;
+          curRotX += (baseRotX - curRotX) * 0.15;
+          modelRoot.rotation.y = curRotY;
+          modelRoot.rotation.x = curRotX;
+          renderer.render(scene, camera);
+        }
         return;
       }
 
@@ -245,12 +271,10 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
         modelRoot.rotation.z = organicRoll;
       } else {
         if (autoRotateRef.current && !isDragging) {
-          // Slow, graceful museum turntable rotation (approx 1/3 speed, silky smooth)
           baseRotY += 0.0022;
         }
-        // Silky smooth damping
-        curRotX += (baseRotX - curRotX) * 0.06;
-        curRotY += (baseRotY - curRotY) * 0.06;
+        curRotX += (baseRotX - curRotX) * 0.045;
+        curRotY += (baseRotY - curRotY) * 0.045;
         modelRoot.rotation.x = curRotX;
         modelRoot.rotation.y = curRotY;
       }
@@ -261,13 +285,14 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
 
     return () => {
       disposed = true;
+      pmremGenerator.dispose();
+      roomEnv.dispose();
       cancelAnimationFrame(reqId);
       ro.disconnect();
       container.removeEventListener('pointerdown', onPointerDown);
       container.removeEventListener('pointermove', onPointerMove);
       container.removeEventListener('pointerup', onPointerUp);
       container.removeEventListener('pointercancel', onPointerUp);
-      envTexture.dispose();
       renderer.dispose();
       dracoLoader.dispose();
     };
