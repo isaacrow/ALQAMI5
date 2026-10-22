@@ -288,7 +288,7 @@ export const AlqamiSpatialApp: React.FC<AlqamiSpatialAppProps> = ({ onPreviewInS
                   setBannerArtifactIndex((prev) => (prev + 1) % ALQAMI_ARTIFACTS.length);
                   spatialSound.playPinchTap();
                 }}
-                className="w-48 h-48 relative drop-shadow-[0_25px_35px_rgba(0,0,0,0.65)] pointer-events-auto flex items-center justify-center cursor-pointer transition-transform active:scale-95"
+                className="w-56 h-56 relative pointer-events-auto flex items-center justify-center cursor-pointer transition-transform active:scale-95"
                 title="Click to cycle random authentic artifact"
               >
                 <AlqamiArtifact3DCanvas

@@ -93,13 +93,13 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
     const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
     shadowMesh.rotation.x = -Math.PI / 2;
     shadowMesh.position.y = -0.45;
-    scene.add(shadowMesh);
+    if (mode !== 'banner') { scene.add(shadowMesh); }
 
     const modelRoot = new THREE.Group();
     scene.add(modelRoot);
     const loader = new GLTFLoader();
     const dracoLoader = new DRACOLoader();
-    dracoLoader.setDecoderPath(assetUrl('draco/'));
+    dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
     loader.setDRACOLoader(dracoLoader);
 
     let disposed = false;
@@ -199,7 +199,6 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
     const onPointerMove = (e: PointerEvent) => {
       if (!isDragging) {
         if (modeRef.current === 'banner') {
-          // Subtle mouse hover parallax
           const rect = container.getBoundingClientRect();
           parallaxY = ((e.clientX - rect.left) / rect.width - 0.5) * 0.45;
           parallaxX = ((e.clientY - rect.top) / rect.height - 0.5) * 0.25;
@@ -242,8 +241,6 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
     let reqId = 0;
     const animate = () => {
       reqId = requestAnimationFrame(animate);
-      const time = performance.now() * 0.001;
-
       if (modeRef.current === 'card') {
         if (isDragging) {
           curRotY += (baseRotY - curRotY) * 0.15;
@@ -256,23 +253,14 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
       }
 
       if (modeRef.current === 'banner') {
-        // Continuous organic floating & random moving in the blue banner
-        modelRoot.position.y = Math.sin(time * 1.6) * 0.06 + Math.cos(time * 2.3) * 0.03;
-        modelRoot.position.x = Math.sin(time * 1.2) * 0.035;
-        const organicYaw = Math.sin(time * 0.8) * 0.38 + Math.cos(time * 0.45) * 0.28;
-        const organicPitch = Math.sin(time * 1.1) * 0.12;
-        const organicRoll = Math.sin(time * 0.9) * 0.07;
-
-        curRotY += (baseRotY + organicYaw + parallaxY - curRotY) * 0.12;
-        curRotX += (baseRotX + organicPitch + parallaxX - curRotX) * 0.12;
-
+        modelRoot.position.set(0, 0, 0);
+        modelRoot.rotation.x = 0.12;
+        modelRoot.rotation.z = 0;
+        baseRotY += 0.0028;
+        curRotY += (baseRotY + parallaxY - curRotY) * 0.045;
         modelRoot.rotation.y = curRotY;
-        modelRoot.rotation.x = curRotX;
-        modelRoot.rotation.z = organicRoll;
       } else {
-        if (autoRotateRef.current && !isDragging) {
-          baseRotY += 0.0022;
-        }
+        if (autoRotateRef.current && !isDragging) baseRotY += 0.0022;
         curRotX += (baseRotX - curRotX) * 0.045;
         curRotY += (baseRotY - curRotY) * 0.045;
         modelRoot.rotation.x = curRotX;

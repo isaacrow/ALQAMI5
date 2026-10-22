@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import jsQR from 'jsqr';
-import * as THREE from 'three';
+import QRCode from 'qrcode';
 import {
   X,
   Scan,
@@ -25,11 +25,9 @@ import {
 } from 'lucide-react';
 import {
   getAllReferenceObjects,
-  getArtifactRdfMetadata,
   RdfParsedMetadata,
   ScannedReferenceObject,
   saveCustomScannedObject,
-  exportArObjectBlob,
   generateCustomTurtle,
 } from '../../utils/alqamiRdfStore';
 import { spatialSound } from '../../utils/spatialSound';
@@ -48,7 +46,7 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
   onDeployInSpace,
   onOpenDetail,
 }) => {
-  // Modes: 'detect' (Apple ARKit Object Detection & RDF Recall) | 'scan' (Apple ARKit Object Scanning & Give Metadata)
+  // Catalog identification by printed QR label, plus metadata record creation.
   const [activeMode, setActiveMode] = useState<'detect' | 'scan'>('detect');
 
   // Detection state
@@ -57,21 +55,9 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
   const [activeRdfTab, setActiveRdfTab] = useState<'summary' | 'transcription' | 'turtle' | 'bibframe'>('summary');
   const [scanMessage, setScanMessage] = useState('وجه الكاميرا نحو رمز القطعة');
   const [copiedRdf, setCopiedRdf] = useState(false);
-  const [isLockedOnObject, setIsLockedOnObject] = useState(true);
+  const [isLockedOnObject, setIsLockedOnObject] = useState(false);
 
-  // Scanning state (Apple ARKit ARObjectScanning steps 1 to 5)
-  // Step 1: Position & Bounding Box
-  // Step 2: 360° Scan Coverage
-  // Step 3: Adjust Origin
-  // Step 4: Give Metadata (RDF)
-  // Step 5: Test & Export (.arobject)
-  const [scanStep, setScanStep] = useState<1 | 2 | 3 | 4 | 5>(1);
-  const [boxDimensions, setBoxDimensions] = useState({ widthCm: 22.0, heightCm: 28.5, depthCm: 22.0 });
-  const [boxOffset, setBoxOffset] = useState({ x: 0, y: 0, z: -0.8 });
-  const [originOffset, setOriginOffset] = useState({ x: 0, y: -0.14, z: 0 });
-  const [scanCoverage, setScanCoverage] = useState({ front: 0, right: 0, back: 0, left: 0, top: 0 });
-  const [isScanningActive, setIsScanningActive] = useState(false);
-  const [featurePointsCount, setFeaturePointsCount] = useState(380);
+  // The web workflow stores an RDF record; it does not reconstruct a 3D scan.
 
   // Custom Metadata Form
   const [customForm, setCustomForm] = useState({
@@ -79,31 +65,34 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
     titleAr: '',
     titleEn: '',
     creatorAr: '',
-    date: 'العصر الإسلامي',
-    materialsAr: 'معدن مطروق، فضة، ذهب',
-    dimensions: '22 × 28 × 22 سم',
+    date: '',
+    materialsAr: '',
+    dimensions: '',
     transcriptionAr: '',
-    selectedBaseArtifactId: 'ALQ-ARM-001',
   });
 
   const [savedSuccessToast, setSavedSuccessToast] = useState(false);
 
-  // Video and Three.js 3D Viewport refs
+  // Live camera and QR decoder refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const threeMountRef = useRef<HTMLDivElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const animFrameRef = useRef<number>(0);
-
-  // Three.js instances
-  const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const boundingBoxGroupRef = useRef<THREE.Group | null>(null);
-  const pointCloudRef = useRef<THREE.Points | null>(null);
-  const originAxesRef = useRef<THREE.Group | null>(null);
 
   const activeTarget = referenceObjects[selectedTargetIndex] || referenceObjects[0];
+
+  const downloadCatalogLabel = async () => {
+    const dataUrl = await QRCode.toDataURL(`ALQAMI:${activeTarget.id}`, {
+      width: 720,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#111827', light: '#ffffff' },
+    });
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = `alqami-${activeTarget.slug}-label.png`;
+    link.click();
+    setScanMessage('تم تنزيل ملصق QR. اطبعه وضعه قرب القطعة ليتعرف عليها الماسح.');
+  };
 
   // Decode real QR codes from the live camera. QR payloads may be an artifact ID,
   // slug, or an Alqami artifact URL containing ?artifact=<id>.
@@ -118,6 +107,7 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
       const video = videoRef.current;
       if (disposed || !video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
 
+      if (!video.videoWidth || !video.videoHeight) return;
       const scale = Math.min(1, 720 / video.videoWidth);
       canvas.width = Math.round(video.videoWidth * scale);
       canvas.height = Math.round(video.videoHeight * scale);
@@ -182,12 +172,14 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
         }
 
         streamRef.current = stream;
+        setScanMessage('الكاميرا جاهزة — امسح رمز ALQAMI على القطعة أو اختر سجلاً للمعاينة');
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play().catch(() => {});
         }
       } catch (err) {
-        console.warn('Physical camera unavailable, using spatial camera simulator:', err);
+        console.warn('Camera access is unavailable:', err);
+        setScanMessage('تعذّر فتح الكاميرا. استخدم Safari عبر HTTPS واسمح بالوصول للكاميرا.');
       }
     }
 
@@ -201,211 +193,6 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
       }
     };
   }, [isOpen]);
-
-  // Three.js Interactive 3D Bounding Box & Point Cloud Setup
-  useEffect(() => {
-    if (!isOpen || !threeMountRef.current) return;
-
-    const container = threeMountRef.current;
-    const width = container.clientWidth || window.innerWidth;
-    const height = container.clientHeight || window.innerHeight;
-
-    const scene = new THREE.Scene();
-    sceneRef.current = scene;
-
-    const camera = new THREE.PerspectiveCamera(48, width / height, 0.05, 50);
-    camera.position.set(0, 0, 0);
-    cameraRef.current = camera;
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-    renderer.setSize(width, height);
-    rendererRef.current = renderer;
-    container.replaceChildren(renderer.domElement);
-
-    // Subtle studio lights for 3D bounding gizmos
-    const ambient = new THREE.AmbientLight(0xffffff, 1.8);
-    scene.add(ambient);
-    const dir = new THREE.DirectionalLight(0xfff5e6, 2.5);
-    dir.position.set(2, 3, 2);
-    scene.add(dir);
-
-    // ── 3D Bounding Box Group ──
-    const bboxGroup = new THREE.Group();
-    scene.add(bboxGroup);
-    boundingBoxGroupRef.current = bboxGroup;
-
-    // Outer wireframe box
-    const boxGeo = new THREE.BoxGeometry(1, 1, 1);
-    const boxMat = new THREE.MeshBasicMaterial({
-      color: 0x00f5d4,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.55,
-    });
-    const boxMesh = new THREE.Mesh(boxGeo, boxMat);
-    boxMesh.name = 'boxMesh';
-    bboxGroup.add(boxMesh);
-
-    // Translucent glass faces
-    const glassMat = new THREE.MeshStandardMaterial({
-      color: 0x00f5d4,
-      transparent: true,
-      opacity: 0.08,
-      roughness: 0.2,
-      metalness: 0.1,
-      side: THREE.DoubleSide,
-    });
-    const glassMesh = new THREE.Mesh(boxGeo, glassMat);
-    glassMesh.name = 'glassMesh';
-    bboxGroup.add(glassMesh);
-
-    // Corner brackets (Apple ARKit style)
-    const cornersGroup = new THREE.Group();
-    cornersGroup.name = 'cornersGroup';
-    bboxGroup.add(cornersGroup);
-
-    // Point Cloud (Simulated ARKit Spatial Feature Points)
-    const ptsCount = 650;
-    const ptsPositions = new Float32Array(ptsCount * 3);
-    const ptsColors = new Float32Array(ptsCount * 3);
-    const colorAmber = new THREE.Color(0xfbbf24);
-    const colorCyan = new THREE.Color(0x00f5d4);
-
-    for (let i = 0; i < ptsCount; i++) {
-      // Clustered inside and around the bounding box
-      ptsPositions[i * 3 + 0] = (Math.random() - 0.5) * 0.9;
-      ptsPositions[i * 3 + 1] = (Math.random() - 0.5) * 0.9;
-      ptsPositions[i * 3 + 2] = (Math.random() - 0.5) * 0.9;
-
-      const c = Math.random() > 0.4 ? colorCyan : colorAmber;
-      ptsColors[i * 3 + 0] = c.r;
-      ptsColors[i * 3 + 1] = c.g;
-      ptsColors[i * 3 + 2] = c.b;
-    }
-
-    const ptsGeo = new THREE.BufferGeometry();
-    ptsGeo.setAttribute('position', new THREE.BufferAttribute(ptsPositions, 3));
-    ptsGeo.setAttribute('color', new THREE.BufferAttribute(ptsColors, 3));
-    const ptsMat = new THREE.PointsMaterial({
-      size: 5.5,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.85,
-    });
-    const pointCloud = new THREE.Points(ptsGeo, ptsMat);
-    bboxGroup.add(pointCloud);
-    pointCloudRef.current = pointCloud;
-
-    // Origin Axes Gizmo (Red X, Green Y, Blue Z)
-    const axesGroup = new THREE.Group();
-    axesGroup.name = 'axesGroup';
-    const axisX = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0), 0.12, 0xef4444, 0.03, 0.02);
-    const axisY = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), 0.12, 0x10b981, 0.03, 0.02);
-    const axisZ = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 0), 0.12, 0x3b82f6, 0.03, 0.02);
-    const originSphere = new THREE.Mesh(
-      new THREE.SphereGeometry(0.016, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0xffffff })
-    );
-    axesGroup.add(axisX, axisY, axisZ, originSphere);
-    bboxGroup.add(axesGroup);
-    originAxesRef.current = axesGroup;
-
-    // Resize observer
-    const ro = new ResizeObserver(() => {
-      if (!container) return;
-      const nw = container.clientWidth || window.innerWidth;
-      const nh = container.clientHeight || window.innerHeight;
-      camera.aspect = nw / nh;
-      camera.updateProjectionMatrix();
-      renderer.setSize(nw, nh);
-    });
-    ro.observe(container);
-
-    let disposed = false;
-
-    // Main 3D Render Loop
-    const animate = () => {
-      if (disposed) return;
-      animFrameRef.current = requestAnimationFrame(animate);
-
-      const time = performance.now() * 0.001;
-
-      // Pulse feature points
-      if (pointCloudRef.current) {
-        pointCloudRef.current.rotation.y = Math.sin(time * 0.3) * 0.08;
-      }
-
-      renderer.render(scene, camera);
-    };
-
-    animFrameRef.current = requestAnimationFrame(animate);
-
-    return () => {
-      disposed = true;
-      cancelAnimationFrame(animFrameRef.current);
-      ro.disconnect();
-      renderer.dispose();
-    };
-  }, [isOpen]);
-
-  // Synchronize 3D Bounding Box size and position
-  useEffect(() => {
-    if (!boundingBoxGroupRef.current) return;
-    const group = boundingBoxGroupRef.current;
-
-    // Convert cm to meters
-    const sx = boxDimensions.widthCm / 100;
-    const sy = boxDimensions.heightCm / 100;
-    const sz = boxDimensions.depthCm / 100;
-
-    const boxMesh = group.getObjectByName('boxMesh');
-    const glassMesh = group.getObjectByName('glassMesh');
-
-    if (boxMesh) boxMesh.scale.set(sx, sy, sz);
-    if (glassMesh) glassMesh.scale.set(sx, sy, sz);
-
-    group.position.set(boxOffset.x, boxOffset.y, boxOffset.z);
-
-    if (originAxesRef.current) {
-      originAxesRef.current.position.set(originOffset.x, originOffset.y, originOffset.z);
-    }
-  }, [boxDimensions, boxOffset, originOffset]);
-
-  // Simulated 360° Scan Progression in Scan Mode
-  useEffect(() => {
-    if (activeMode !== 'scan' || scanStep !== 2 || !isScanningActive) return;
-
-    const interval = window.setInterval(() => {
-      setScanCoverage((prev) => {
-        const nextFront = Math.min(100, prev.front + 8);
-        const nextRight = prev.front > 40 ? Math.min(100, prev.right + 7) : prev.right;
-        const nextBack = prev.right > 50 ? Math.min(100, prev.back + 6) : prev.back;
-        const nextLeft = prev.back > 40 ? Math.min(100, prev.left + 8) : prev.left;
-        const nextTop = prev.left > 30 ? Math.min(100, prev.top + 9) : prev.top;
-
-        setFeaturePointsCount((c) => c + 25);
-        spatialSound.playSnap?.(0.15);
-
-        if (nextFront >= 100 && nextRight >= 100 && nextBack >= 100 && nextLeft >= 100 && nextTop >= 100) {
-          window.clearInterval(interval);
-          setIsScanningActive(false);
-          spatialSound.playSuccess?.();
-          setScanStep(3); // proceed to adjust origin
-        }
-
-        return {
-          front: nextFront,
-          right: nextRight,
-          back: nextBack,
-          left: nextLeft,
-          top: nextTop,
-        };
-      });
-    }, 450);
-
-    return () => window.clearInterval(interval);
-  }, [activeMode, scanStep, isScanningActive]);
 
   // Copy Turtle / RDF Code
   const handleCopyCode = () => {
@@ -429,7 +216,7 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
     spatialSound.playPinchTap?.();
   };
 
-  // Save new custom scanned object to registry & download .arobject file
+  // Save a custom catalog record and download its JSON metadata.
   const handleSaveScannedObject = () => {
     const newTtl = generateCustomTurtle({
       titleAr: customForm.titleAr || customForm.scanName,
@@ -441,48 +228,55 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
       transcriptionAr: customForm.transcriptionAr,
     });
 
-    const baseMeta = getArtifactRdfMetadata(customForm.selectedBaseArtifactId);
+    const customId = `ALQ-CUSTOM-${Date.now()}`;
 
     const newObj: ScannedReferenceObject = {
-      id: `ALQ-CUSTOM-${Date.now()}`,
+      id: customId,
       scanName: customForm.scanName,
       timestamp: Date.now(),
-      boundingBox: boxDimensions,
-      origin: originOffset,
-      featurePointsCount,
-      coverageScore: 0.96,
+      boundingBox: { widthCm: 0, heightCm: 0, depthCm: 0 },
+      origin: { x: 0, y: 0, z: 0 },
+      featurePointsCount: 0,
+      coverageScore: 0,
       metadata: {
-        ...baseMeta,
+        uri: `urn:alqami:artifact:${customId}`,
+        type: 'schema:VisualArtwork',
         titleAr: customForm.titleAr || customForm.scanName,
         titleEn: customForm.titleEn || customForm.scanName,
         creatorAr: customForm.creatorAr || 'حرفي غير معروف',
+        creatorEn: '',
         date: customForm.date,
         materialsAr: customForm.materialsAr,
+        materialsEn: '',
         dimensions: customForm.dimensions,
+        publisherAr: 'مستودع علقمي',
+        publisherEn: 'Alqami catalog',
+        identifier: customId,
         transcriptionAr: customForm.transcriptionAr,
         rawTtl: newTtl,
+        summaryAr: customForm.transcriptionAr || customForm.titleAr || customForm.scanName,
+        summaryEn: customForm.titleEn || customForm.scanName,
       },
-      glbModel: baseMeta.glbModel || '/models/Old_Islamic_Helmet.glb',
       customRdfTurtle: newTtl,
     };
 
     saveCustomScannedObject(newObj);
+    setSelectedTargetIndex(getAllReferenceObjects().findIndex((item) => item.id === newObj.id));
 
-    // Export .arobject file
-    const arBlob = exportArObjectBlob(newObj);
-    const url = URL.createObjectURL(arBlob);
+    // Store metadata only; this browser flow does not reconstruct a 3D mesh.
+    const recordBlob = new Blob([JSON.stringify(newObj, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(recordBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${customForm.scanName.replace(/\s+/g, '_')}.arobject`;
+    a.download = `${customForm.scanName.replace(/[^\p{L}\p{N}-]+/gu, '_')}.json`;
     a.click();
     URL.revokeObjectURL(url);
 
     setSavedSuccessToast(true);
-    spatialSound.playSuccess?.();
+    spatialSound.playAlqamiChime();
     window.setTimeout(() => {
       setSavedSuccessToast(false);
       setActiveMode('detect');
-      setSelectedTargetIndex(0);
     }, 1800);
   };
 
@@ -492,7 +286,7 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
     <div className="fixed inset-0 z-[88] bg-black/92 backdrop-blur-2xl flex flex-col justify-between p-3 sm:p-5 select-none animate-in fade-in duration-200">
       {/* ── TOP HEADER / MODE SWITCHER ── */}
       <div className="flex items-center justify-between z-20 gap-3">
-        {/* Apple ARKit Branding Badge */}
+      {/* Camera QR scanner status */}
         <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full vision-glass border border-emerald-400/40 text-xs font-semibold text-emerald-300 shadow-[0_0_20px_rgba(52,211,153,0.35)]">
           <Scan className="w-4 h-4 animate-pulse text-emerald-300" />
           <span>مسح رمز القطعة وبياناتها • Camera QR scanner</span>
@@ -519,7 +313,6 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
             onClick={() => {
               spatialSound.playPinchTap?.();
               setActiveMode('scan');
-              setScanStep(1);
             }}
             className={`px-4 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
               activeMode === 'scan'
@@ -542,7 +335,7 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
         </button>
       </div>
 
-      {/* ── CENTER VIEWPORT (VIDEO PASSTHROUGH + THREE.JS 3D BOUNDING BOX) ── */}
+        {/* Live camera view and QR metadata overlay */}
       <div className="relative flex-1 my-2 rounded-[28px] overflow-hidden border border-white/20 bg-black/60 flex items-center justify-center">
         {/* Real camera video */}
         <video
@@ -565,10 +358,9 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
           </>
         )}
 
-        {/* Interactive Three.js 3D Canvas Mount (3D Bounding Box, Point Cloud, Origin Axes) */}
-        <div ref={threeMountRef} className="absolute inset-0 w-full h-full pointer-events-auto" />
+        {/* 3D rendering is reserved for the catalog preview; camera recognition uses QR data. */}
 
-        {/* ── HOVERING 3D METADATA CARD (HOVERS OVER THE REAL ARTIFACT) ── */}
+        {/* Catalog metadata card. Touch selection is used on phones instead of hover. */}
         {activeMode === 'detect' && isLockedOnObject && (
           <div
             dir="rtl"
@@ -577,7 +369,7 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
             }}
             className="absolute top-1/2 left-1/2 z-30 w-[min(480px,92vw)] p-4 sm:p-5 rounded-[26px] vision-glass border border-emerald-400/60 bg-[#0a1324]/90 shadow-[0_20px_50px_rgba(0,0,0,0.85)] space-y-3.5 animate-in zoom-in-95 duration-200 pointer-events-auto"
           >
-            {/* Hover Header with Live Confidence */}
+            {/* Pre-entered catalog metadata */}
             <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-full bg-emerald-400/20 border border-emerald-400 flex items-center justify-center text-emerald-300">
@@ -597,9 +389,11 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
                 <span className="text-xs font-bold text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full border border-emerald-400/30">
                   {activeTarget.isCustom ? 'سجل مخصص' : 'سجل فهرس'}
                 </span>
-                <div className="text-[9px] text-white/50 pt-0.5">
-                  {activeTarget.defaultBox.widthCm}×{activeTarget.defaultBox.heightCm}×{activeTarget.defaultBox.depthCm} cm
-                </div>
+                {activeTarget.defaultBox.widthCm > 0 && activeTarget.defaultBox.heightCm > 0 && (
+                  <div className="text-[9px] text-white/50 pt-0.5">
+                    {activeTarget.defaultBox.widthCm}×{activeTarget.defaultBox.heightCm}×{activeTarget.defaultBox.depthCm} cm
+                  </div>
+                )}
               </div>
             </div>
 
@@ -692,8 +486,8 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
               </div>
             )}
 
-            {/* Bottom Actions: Deploy 3D Twin & Open Catalog */}
-            <div className="flex items-center gap-2 pt-1 border-t border-white/10">
+            {/* Existing catalog models can be previewed; metadata-only records cannot. */}
+            {!activeTarget.isCustom && <div className="flex items-center gap-2 pt-1 border-t border-white/10">
               <button
                 onClick={() => {
                   spatialSound.playPinchTap?.();
@@ -719,48 +513,21 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
                 <span>تفاصيل القطعة</span>
                 <ArrowRight className="w-3.5 h-3.5 rotate-180" />
               </button>
-            </div>
+            </div>}
+            {activeTarget.isCustom && (
+              <div className="pt-2 border-t border-white/10 text-xs text-amber-100/80">
+                سجل بيانات فقط. لا يوجد نموذج ثلاثي الأبعاد مرفق بهذا السجل.
+              </div>
+            )}
           </div>
         )}
 
-        {/* ── SCAN MODE OVERLAY (APPLE ARKit STEP-BY-STEP WORKFLOW) ── */}
+        {/* Metadata registration. This browser flow does not reconstruct a 3D mesh. */}
         {activeMode === 'scan' && (
-          <div className="absolute top-4 left-4 right-4 z-20 flex flex-col items-center">
-            {/* Step Indicators */}
-            <div className="flex items-center gap-2 px-4 py-1.5 rounded-full vision-glass border border-amber-400/40 bg-black/70 text-xs text-white">
-              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${scanStep >= 1 ? 'bg-amber-400 text-black' : 'bg-white/20'}`}>1</span>
-              <span>تحديد الصندوق</span>
-              <span className="text-white/30">›</span>
-              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${scanStep >= 2 ? 'bg-amber-400 text-black' : 'bg-white/20'}`}>2</span>
-              <span>المسح المحيطي</span>
-              <span className="text-white/30">›</span>
-              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${scanStep >= 3 ? 'bg-amber-400 text-black' : 'bg-white/20'}`}>3</span>
-              <span>نقطة الارتكاز</span>
-              <span className="text-white/30">›</span>
-              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${scanStep >= 4 ? 'bg-amber-400 text-black' : 'bg-white/20'}`}>4</span>
-              <span>توثيق RDF</span>
-            </div>
-
-            {/* Step Guidance Message */}
-            <div className="mt-2 px-4 py-1.5 rounded-xl vision-glass border border-white/15 bg-black/50 text-[11px] text-amber-200 text-center max-w-md animate-pulse">
-              {scanStep === 1 && 'اضبط أبعاد صندوق الإحاطة 3D ليتطابق مع المجسم الحقيقي على طاولتك.'}
-              {scanStep === 2 && 'تحرك ببطء حول المجسم من جميع الجهات لجمع سحابة النقاط المكانية.'}
-              {scanStep === 3 && 'اضبط نقطة الأصل (RGB Origin Axes) لتحديد سطح ارتكاز المجسم في الغرفة.'}
-              {scanStep === 4 && 'أدخل بيانات الميتاداتا لإنشاء كود RDF/Turtle وتصدير حزمة .arobject.'}
-            </div>
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl vision-glass border border-amber-400/40 bg-black/75 text-[11px] text-amber-100 text-center max-w-md">
+            أدخل بيانات القطعة لحفظ سجل فهرس. هذا النموذج لا ينشئ مسحاً ثلاثي الأبعاد.
           </div>
         )}
-
-        {/* ── ARKit 3D Dimension Tags floating on the canvas ── */}
-        <div className="absolute bottom-3 left-4 z-20 flex items-center gap-2 text-[10px] font-mono text-cyan-300 vision-glass px-3 py-1.5 rounded-full border border-cyan-400/30">
-          <span>W: {boxDimensions.widthCm} cm</span>
-          <span>•</span>
-          <span>H: {boxDimensions.heightCm} cm</span>
-          <span>•</span>
-          <span>D: {boxDimensions.depthCm} cm</span>
-          <span>•</span>
-          <span>Points: {featurePointsCount}</span>
-        </div>
       </div>
 
       {/* ── BOTTOM DOCK CONTROLS ── */}
@@ -772,14 +539,22 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
               السجلات المتاحة للمعاينة (Catalog records):
             </span>
             <div className="flex items-center gap-2">
-              {referenceObjects.slice(0, 6).map((refObj, idx) => (
+              <button
+                onClick={downloadCatalogLabel}
+                className="px-3 py-1.5 rounded-2xl flex items-center gap-2 text-xs transition cursor-pointer whitespace-nowrap vision-glass border border-amber-300/50 text-amber-100 hover:bg-white/15"
+                title="Download a printable QR label for this record"
+              >
+                <Download className="w-4 h-4" />
+                <span>تنزيل ملصق QR</span>
+              </button>
+              {referenceObjects.map((refObj, idx) => (
                 <button
                   key={refObj.id}
                   onClick={() => {
                     spatialSound.playPinchTap?.();
                     setSelectedTargetIndex(idx);
                     setIsLockedOnObject(true);
-                    setConfidence(0.95 + Math.random() * 0.04);
+                    setScanMessage('معاينة من الفهرس — وجّه الكاميرا نحو رمز هذه القطعة للتعرّف عليها');
                   }}
                   className={`px-3 py-1.5 rounded-2xl flex items-center gap-2 text-xs transition cursor-pointer whitespace-nowrap ${
                     selectedTargetIndex === idx
@@ -787,11 +562,15 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
                       : 'vision-glass border border-white/15 text-white hover:bg-white/15'
                   }`}
                 >
-                  <img
-                    src={refObj.image}
-                    alt={refObj.name}
-                    className="w-5 h-5 rounded-md object-cover bg-black/40"
-                  />
+                  {refObj.image ? (
+                    <img
+                      src={refObj.image}
+                      alt={refObj.name}
+                      className="w-5 h-5 rounded-md object-cover bg-black/40"
+                    />
+                  ) : (
+                    <Box className="w-4 h-4" aria-hidden="true" />
+                  )}
                   <span>{refObj.name}</span>
                 </button>
               ))}
@@ -799,132 +578,15 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
           </div>
         )}
 
-        {/* Scan Mode Step 1: Bounding Box Size Adjusters */}
-        {activeMode === 'scan' && scanStep === 1 && (
-          <div className="p-3 rounded-2xl vision-glass border border-white/20 bg-black/60 space-y-2">
-            <div className="grid grid-cols-3 gap-3 text-xs text-white">
-              <div>
-                <label className="text-[10px] text-white/60 block">العرض (Width X cm): {boxDimensions.widthCm}</label>
-                <input
-                  type="range"
-                  min="8"
-                  max="80"
-                  value={boxDimensions.widthCm}
-                  onChange={(e) => setBoxDimensions((p) => ({ ...p, widthCm: Number(e.target.value) }))}
-                  className="w-full accent-amber-400"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-white/60 block">الارتفاع (Height Y cm): {boxDimensions.heightCm}</label>
-                <input
-                  type="range"
-                  min="8"
-                  max="120"
-                  value={boxDimensions.heightCm}
-                  onChange={(e) => setBoxDimensions((p) => ({ ...p, heightCm: Number(e.target.value) }))}
-                  className="w-full accent-amber-400"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-white/60 block">العمق (Depth Z cm): {boxDimensions.depthCm}</label>
-                <input
-                  type="range"
-                  min="8"
-                  max="80"
-                  value={boxDimensions.depthCm}
-                  onChange={(e) => setBoxDimensions((p) => ({ ...p, depthCm: Number(e.target.value) }))}
-                  className="w-full accent-amber-400"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-1">
-              <button
-                onClick={() => {
-                  spatialSound.playPinchTap?.();
-                  setScanStep(2);
-                  setIsScanningActive(true);
-                }}
-                className="px-5 py-2 rounded-full bg-amber-400 hover:bg-amber-300 text-black font-bold text-xs shadow-md flex items-center gap-1.5 cursor-pointer active:scale-95 transition"
-              >
-                <span>ابدأ المسح المحيطي 360° (Start Scan)</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Scan Mode Step 2: 360° Coverage Progress */}
-        {activeMode === 'scan' && scanStep === 2 && (
-          <div className="p-3 rounded-2xl vision-glass border border-white/20 bg-black/60 flex items-center justify-between gap-4">
-            <div className="grid grid-cols-5 gap-2 flex-1 text-center text-[10px]">
-              <div className="bg-white/10 p-2 rounded-xl">
-                <span className="block text-white/60">الأمام</span>
-                <span className="font-bold text-amber-400">{scanCoverage.front}%</span>
-              </div>
-              <div className="bg-white/10 p-2 rounded-xl">
-                <span className="block text-white/60">اليمين</span>
-                <span className="font-bold text-amber-400">{scanCoverage.right}%</span>
-              </div>
-              <div className="bg-white/10 p-2 rounded-xl">
-                <span className="block text-white/60">الخلف</span>
-                <span className="font-bold text-amber-400">{scanCoverage.back}%</span>
-              </div>
-              <div className="bg-white/10 p-2 rounded-xl">
-                <span className="block text-white/60">اليسار</span>
-                <span className="font-bold text-amber-400">{scanCoverage.left}%</span>
-              </div>
-              <div className="bg-white/10 p-2 rounded-xl">
-                <span className="block text-white/60">الأعلى</span>
-                <span className="font-bold text-amber-400">{scanCoverage.top}%</span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => {
-                spatialSound.playPinchTap?.();
-                setIsScanningActive(false);
-                setScanStep(3);
-              }}
-              className="px-4 py-2.5 rounded-full bg-emerald-400 hover:bg-emerald-300 text-black font-bold text-xs shadow-md"
-            >
-              اكتمال المسح
-            </button>
-          </div>
-        )}
-
-        {/* Scan Mode Step 3: Adjust Origin */}
-        {activeMode === 'scan' && scanStep === 3 && (
-          <div className="p-3 rounded-2xl vision-glass border border-white/20 bg-black/60 flex items-center justify-between gap-4">
-            <div className="text-xs text-white/80 space-y-1">
-              <span className="font-bold text-amber-300 block">محاور نقطة الأصل (ARKit Anchor Origin):</span>
-              <span className="text-[11px] text-white/60">
-                الأحمر: محور X • الأخضر: محور Y • الأزرق: محور Z
-              </span>
-            </div>
-
-            <button
-              onClick={() => {
-                spatialSound.playPinchTap?.();
-                setScanStep(4);
-              }}
-              className="px-5 py-2.5 rounded-full bg-amber-400 hover:bg-amber-300 text-black font-bold text-xs shadow-md flex items-center gap-1.5"
-            >
-              <span>توثيق بيانات الميتاداتا (Enter RDF Metadata)</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-
         {/* Scan Mode Step 4: Metadata Form */}
-        {activeMode === 'scan' && scanStep === 4 && (
+        {activeMode === 'scan' && (
           <div
             dir="rtl"
             className="p-4 rounded-2xl vision-glass border border-white/25 bg-[#0e1628]/95 space-y-3 max-h-[38vh] overflow-y-auto custom-scrollbar"
           >
             <div className="flex items-center justify-between border-b border-white/10 pb-2">
-              <h4 className="text-xs font-bold text-amber-300">توثيق ميتاداتا المجسم (RDF / Turtle Metadata)</h4>
-              <span className="text-[10px] text-white/50">Apple ARKit ARObject Reference</span>
+              <h4 className="text-xs font-bold text-amber-300">إضافة سجل بيانات (RDF / Turtle)</h4>
+              <span className="text-[10px] text-white/50">Metadata only • No 3D reconstruction</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
@@ -972,6 +634,27 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
                 />
               </div>
 
+              <div>
+                <label className="text-[10px] text-white/60 block mb-1">التاريخ أو الفترة:</label>
+                <input
+                  type="text"
+                  value={customForm.date}
+                  onChange={(e) => setCustomForm((p) => ({ ...p, date: e.target.value }))}
+                  className="w-full px-3 py-1.5 rounded-xl bg-black/50 border border-white/20 text-white text-xs focus:border-amber-400 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] text-white/60 block mb-1">الأبعاد المسجلة:</label>
+                <input
+                  type="text"
+                  value={customForm.dimensions}
+                  onChange={(e) => setCustomForm((p) => ({ ...p, dimensions: e.target.value }))}
+                  placeholder="الارتفاع × العرض × العمق (سم)"
+                  className="w-full px-3 py-1.5 rounded-xl bg-black/50 border border-white/20 text-white text-xs focus:border-amber-400 focus:outline-none"
+                />
+              </div>
+
               <div className="col-span-full">
                 <label className="text-[10px] text-white/60 block mb-1">النص التراثي أو الوصف (Transcription):</label>
                 <textarea
@@ -990,7 +673,7 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
                 className="px-5 py-2 rounded-full bg-emerald-400 hover:bg-emerald-300 text-black font-bold text-xs shadow-md flex items-center gap-1.5 cursor-pointer active:scale-95 transition"
               >
                 <Download className="w-4 h-4" />
-                <span>حفظ وتصدير ملف .arobject و RDF (Save & Export)</span>
+                <span>حفظ سجل البيانات وملف JSON (Save record)</span>
               </button>
             </div>
           </div>
@@ -1001,7 +684,7 @@ export const AlqamiARKitObjectScanner: React.FC<AlqamiARKitObjectScannerProps> =
       {savedSuccessToast && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 px-6 py-4 rounded-2xl vision-glass border border-emerald-400 bg-black/90 text-emerald-300 font-bold text-sm shadow-2xl flex items-center gap-2 animate-in zoom-in-95">
           <CheckCircle2 className="w-5 h-5" />
-          <span>تم حفظ المجسم وتصدير حزمة .arobject بنجاح!</span>
+          <span>تم حفظ سجل البيانات وملف JSON!</span>
         </div>
       )}
     </div>

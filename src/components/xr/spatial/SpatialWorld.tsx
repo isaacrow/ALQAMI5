@@ -1649,7 +1649,7 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
               <Scan className="h-4 w-4" />
             </button>
           )}
-          <button onClick={placeObject} className="world-hud-btn" title="Place a 3D object on the floor where you look">
+          <button onClick={() => placeObject()} className="world-hud-btn" title="Place a 3D object on the floor where you look">
             <Box className="h-4 w-4" />
           </button>
           {objectCount > 0 && (
@@ -1836,21 +1836,21 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
             </div>
             <div className="space-y-1.5">
               <button
-                onClick={() => applyLayoutPreset('arc')}
+                onClick={() => applySpatialLayout('arc')}
                 className="w-full flex items-center justify-between p-2 rounded-xl bg-white/10 hover:bg-white/20 text-left transition-colors"
               >
                 <span>180° Panoramic Arc</span>
                 <span className="text-[10px] text-white/60">Surround</span>
               </button>
               <button
-                onClick={() => applyLayoutPreset('theater')}
+                onClick={() => applySpatialLayout('theater')}
                 className="w-full flex items-center justify-between p-2 rounded-xl bg-white/10 hover:bg-white/20 text-left transition-colors"
               >
                 <span>Theater Focus</span>
                 <span className="text-[10px] text-white/60">Front & Center</span>
               </button>
               <button
-                onClick={() => applyLayoutPreset('matrix')}
+                onClick={() => applySpatialLayout('matrix')}
                 className="w-full flex items-center justify-between p-2 rounded-xl bg-white/10 hover:bg-white/20 text-left transition-colors"
               >
                 <span>Multitasking Matrix</span>

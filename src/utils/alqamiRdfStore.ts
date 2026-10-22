@@ -274,7 +274,7 @@ export function getArtifactRdfMetadata(idOrSlug: string): RdfParsedMetadata {
 }
 
 /**
- * Generates valid W3C RDF/Turtle graph code for any newly scanned object
+ * Generates an RDF/Turtle metadata record for a newly registered catalog item.
  */
 export function generateCustomTurtle(
   data: {
@@ -290,9 +290,13 @@ export function generateCustomTurtle(
     transcriptionAr?: string;
     notes?: string;
   },
-  originUrl = window.location.origin
+  _originUrl = typeof window !== 'undefined' ? window.location.origin : ''
 ): string {
-  const itemUri = data.uri || `https://alqami.net/scanned/${Date.now()}`;
+  const itemUri = data.uri || `urn:alqami:artifact:${Date.now()}`;
+  const literal = (value: string) => JSON.stringify(value);
+  const titleEn = data.titleEn ? `, ${literal(data.titleEn)}@en` : '';
+  const creatorEn = data.creatorEn ? `, ${literal(data.creatorEn)}@en` : '';
+  const transcription = data.transcriptionAr || data.notes || 'لا يوجد وصف مدخل.';
   return `@prefix dc: <http://purl.org/dc/elements/1.1/> .
 @prefix schema: <http://schema.org/> .
 @prefix crm: <http://www.cidoc-crm.org/cidoc-crm/> .
@@ -302,60 +306,16 @@ export function generateCustomTurtle(
 
 <${itemUri}>
     a schema:CreativeWork, crm:E22_Human-Made_Object ;
-    dc:title "${data.titleAr}"@ar${data.titleEn ? `, "${data.titleEn}"@en` : ''} ;
-    dc:creator "${data.creatorAr || 'حرفي غير معروف'}"@ar${data.creatorEn ? `, "${data.creatorEn}"@en` : ''} ;
-    dc:date "${data.date || 'عصر تاريخي إسلامي'}" ;
-    schema:material "${data.materialsAr || 'معدن، حجر، فخار أو ورق'}"@ar ;
-    schema:extent "${data.dimensions || 'أبعاد ممسوحة عبر ARKit'}" ;
-    schema:publisher "مستودع علقمي للرقمنة التراثية ثلاثية الأبعاد • Alqami Spatial OPAC" ;
-    ms:transcriptionArabic """${data.transcriptionAr || data.notes || 'تم مسح وتوثيق هذا المجسم في الفضاء الحقيقي ثلاثي الأبعاد عبر تقنية ARKit Scanning and Detecting 3D Objects واسترجاع بياناته برمجياً.'}"""@ar ;
-    schema:digitalSurrogate <${originUrl}/models/Old_Islamic_Helmet.glb> .
+    dc:title ${literal(data.titleAr)}@ar${titleEn} ;
+    dc:creator ${literal(data.creatorAr || 'غير معروف')}@ar${creatorEn} ;
+    dc:date ${literal(data.date || 'غير مسجل')} ;
+    schema:material ${literal(data.materialsAr || 'غير مسجل')}@ar ;
+    schema:extent ${literal(data.dimensions || 'غير مسجل')} ;
+    schema:publisher "مستودع علقمي" ;
+    ms:transcriptionArabic ${literal(transcription)}@ar .
 `;
 }
 
-/**
- * Exports Apple ARKit compatible .arobject file JSON bundle
- */
-export function exportArObjectBlob(obj: ScannedReferenceObject): Blob {
-  const arObjectBundle = {
-    version: '1.0',
-    type: 'AppleARReferenceObject',
-    name: obj.scanName,
-    dateCaptured: new Date(obj.timestamp).toISOString(),
-    extent: {
-      x: obj.boundingBox.widthCm / 100,
-      y: obj.boundingBox.heightCm / 100,
-      z: obj.boundingBox.depthCm / 100,
-    },
-    center: {
-      x: 0,
-      y: (obj.boundingBox.heightCm / 100) / 2,
-      z: 0,
-    },
-    origin: obj.origin,
-    featurePointsCount: obj.featurePointsCount,
-    trackingQuality: obj.coverageScore >= 0.8 ? 'High' : 'Medium',
-    metadata: {
-      rdfUri: obj.metadata.uri,
-      titleAr: obj.metadata.titleAr,
-      titleEn: obj.metadata.titleEn,
-      creator: obj.metadata.creatorAr,
-      period: obj.metadata.date,
-      materials: obj.metadata.materialsAr,
-      dimensions: obj.metadata.dimensions,
-      transcription: obj.metadata.transcriptionAr,
-      turtleGraph: obj.customRdfTurtle || obj.metadata.rawTtl,
-    },
-    digitalSurrogate: {
-      glbUrl: obj.glbModel,
-      usdzUrl: obj.usdzModel,
-    },
-  };
-
-  return new Blob([JSON.stringify(arObjectBundle, null, 2)], {
-    type: 'application/json',
-  });
-}
 
 const STORAGE_KEY = 'alqami_custom_scanned_objects_v1';
 
@@ -413,9 +373,9 @@ export function getAllReferenceObjects() {
     slug: obj.id,
     name: obj.metadata.titleAr,
     nameEn: obj.metadata.titleEn,
-    image: '/images/alqami_artifact.jpg',
+    image: '',
     metadata: obj.metadata,
-    glb: obj.glbModel || '/models/Old_Islamic_Helmet.glb',
+    glb: obj.glbModel,
     defaultBox: obj.boundingBox,
     isCustom: true,
   }));
