@@ -108,6 +108,126 @@ function cameraYawPitch(q: THREE.Quaternion) {
 }
 
 /**
+ * Estimates small camera translations from the passthrough video. This is a visual
+ * parallax hint, not ARKit tracking: robust frame matching keeps the old movement feel
+ * while confidence checks and a soft return prevent noise from accumulating as drift.
+ */
+class OpticalFlowTracker {
+  private readonly width = 64;
+  private readonly height = 48;
+  private readonly canvas = document.createElement('canvas');
+  private readonly ctx = this.canvas.getContext('2d', { willReadFrequently: true });
+  private previous: Float32Array | null = null;
+  private readonly target = new THREE.Vector3();
+  readonly translation = new THREE.Vector3();
+
+  constructor() {
+    this.canvas.width = this.width;
+    this.canvas.height = this.height;
+  }
+
+  reset() {
+    this.previous = null;
+  }
+
+  update(video: HTMLVideoElement | null, angularSpeed: number) {
+    if (!video || video.readyState < 2 || !this.ctx) return;
+
+    try {
+      this.ctx.drawImage(video, 0, 0, this.width, this.height);
+      const rgba = this.ctx.getImageData(0, 0, this.width, this.height).data;
+      const current = new Float32Array(this.width * this.height);
+      let mean = 0;
+      for (let i = 0, p = 0; i < rgba.length; i += 4, p += 1) {
+        const luma = rgba[i] * 0.299 + rgba[i + 1] * 0.587 + rgba[i + 2] * 0.114;
+        current[p] = luma;
+        mean += luma;
+      }
+      mean /= current.length;
+      for (let i = 0; i < current.length; i += 1) current[i] -= mean;
+
+      const previous = this.previous;
+      this.previous = current;
+      if (!previous) return;
+
+      // Rotation dominates image motion on a phone. Rebase during turns rather than
+      // mistaking the turn for a sideways/vertical walk through the scene.
+      if (angularSpeed > 0.45) {
+        this.target.multiplyScalar(0.985);
+        this.translation.lerp(this.target, 0.16);
+        return;
+      }
+
+      let variance = 0;
+      for (let y = 8; y < this.height - 8; y += 4) {
+        for (let x = 8; x < this.width - 8; x += 4) {
+          const value = current[y * this.width + x];
+          variance += value * value;
+        }
+      }
+      if (variance < 5000) {
+        this.target.multiplyScalar(0.995);
+        this.translation.lerp(this.target, 0.16);
+        return;
+      }
+
+      let bestDx = 0;
+      let bestDy = 0;
+      let bestCost = Infinity;
+      let zeroCost = Infinity;
+      let secondCost = Infinity;
+      for (let dy = -4; dy <= 4; dy += 1) {
+        for (let dx = -5; dx <= 5; dx += 1) {
+          let cost = 0;
+          let count = 0;
+          for (let y = 8; y < this.height - 8; y += 3) {
+            const row = y * this.width;
+            for (let x = 8; x < this.width - 8; x += 3) {
+              const a = current[row + x];
+              const b = previous[(y + dy) * this.width + x + dx];
+              cost += Math.abs(a - b);
+              count += 1;
+            }
+          }
+          cost /= count;
+          if (dx === 0 && dy === 0) zeroCost = cost;
+          if (cost < bestCost) {
+            secondCost = bestCost;
+            bestCost = cost;
+            bestDx = dx;
+            bestDy = dy;
+          } else if (cost < secondCost) {
+            secondCost = cost;
+          }
+        }
+      }
+
+      // Require a clear improvement over no movement and a distinct match. This
+      // suppresses flicker from lighting changes and low-texture camera frames.
+      const distinctMatch = secondCost === Infinity || bestCost < secondCost * 0.995;
+      const confident = bestCost < zeroCost * 0.92 && zeroCost - bestCost > 2.2 && distinctMatch;
+      if (confident) {
+        const px = Math.abs(bestDx) <= 1 ? 0 : bestDx;
+        const py = Math.abs(bestDy) <= 1 ? 0 : bestDy;
+        // Image motion is opposite camera motion. At this resolution a small scale
+        // factor makes translation visible without the old runaway velocity buildup.
+        this.target.x = THREE.MathUtils.clamp(this.target.x - px * 14, -360, 360);
+        this.target.y = THREE.MathUtils.clamp(this.target.y + py * 14, -360, 360);
+      } else {
+        this.target.multiplyScalar(0.997);
+      }
+
+      // Slowly release accumulated parallax while still preserving deliberate movement.
+      this.target.multiplyScalar(0.9995);
+      this.translation.lerp(this.target, 0.2);
+    } catch {
+      // Safari can briefly reject canvas reads while camera frames are changing.
+      this.reset();
+    }
+  }
+}
+
+/**
  * Vertical FOV of what is actually visible on screen. The phone camera's long sensor axis
  * spans `lensFovDeg` (iPhone 1× wide ≈ 69°). The <video> is `object-fit: cover`, so we
  * account for the crop. This keeps virtual objects at true real-world scale.
@@ -282,6 +402,8 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
   const glHostRef = useRef<HTMLDivElement>(null);
   const cssHostRef = useRef<HTMLDivElement>(null);
   const trackerRef = useRef<OrientationTracker>(new OrientationTracker());
+  const opticalTrackerRef = useRef<OpticalFlowTracker | null>(null);
+  if (!opticalTrackerRef.current) opticalTrackerRef.current = new OpticalFlowTracker();
   const panelsRef = useRef(new Map<string, PanelRecord>());
   const pendingPanelsRef = useRef(new Map<string, { el: HTMLDivElement; width: number; height: number }>());
   const objectsRef = useRef(new Map<string, WorldObjectRecord>());
@@ -607,6 +729,8 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
     const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), EYE_HEIGHT);
     const floorHit = new THREE.Vector3();
     const mountTime = performance.now();
+    const previousCameraQuaternion = new THREE.Quaternion();
+    let lastCameraPoseTime = 0;
 
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
@@ -637,10 +761,19 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
         }
       }
 
-      // iPhone Safari has no ARKit world-position feed. Keep camera translation fixed so
-      // guessed optical-flow motion cannot make every placed object drift or wobble.
+      // Safari has no ARKit world-position feed, so use restrained visual parallax for
+      // translation and the device sensors for rotation. Rebase during fast turns.
       tracker.getCameraQuaternion(camera.quaternion, now);
-      camera.position.set(0, 0, 0);
+      const poseDt = lastCameraPoseTime ? Math.max(0.001, (now - lastCameraPoseTime) / 1000) : 0.016;
+      const angularSpeed = previousCameraQuaternion.angleTo(camera.quaternion) / poseDt;
+      previousCameraQuaternion.copy(camera.quaternion);
+      lastCameraPoseTime = now;
+      if (frame % 3 === 0) {
+        const video = document.querySelector<HTMLVideoElement>('video[data-passthrough-video]');
+        if (cameraActiveRef.current) opticalTrackerRef.current!.update(video, angularSpeed);
+        else opticalTrackerRef.current!.reset();
+      }
+      camera.position.copy(opticalTrackerRef.current!.translation);
       camera.updateMatrixWorld();
       const cam = cameraYawPitch(camera.quaternion);
       const forward = _v.set(0, 0, -1).applyQuaternion(camera.quaternion).clone();
