@@ -330,6 +330,17 @@ export function App() {
     };
   }, [xrState.webxrSessionActive, xrState.cameraActive, xrState.spatialWorldActive]);
 
+  // Start hand gestures only after Safari has a real camera stream. Starting the hand
+  // tracker while getUserMedia is still pending makes it request a second camera stream.
+  useEffect(() => {
+    if (!xrState.spatialWorldActive || !xrState.cameraActive || xrState.handTrackingActive) return;
+    setXrState((prev) =>
+      prev.spatialWorldActive && prev.cameraActive && !prev.handTrackingActive
+        ? { ...prev, handTrackingActive: true }
+        : prev
+    );
+  }, [xrState.spatialWorldActive, xrState.cameraActive, xrState.handTrackingActive, setXrState]);
+
   // Desktop room-look fallback; real device orientation is handled separately by the sensor engine.
   const [cameraLook, setCameraLook] = useState({ yaw: 0, pitch: 0 });
   const [isRoomGliding, setIsRoomGliding] = useState(false);
@@ -900,9 +911,11 @@ export function App() {
       // which leaves a black screen while permission/startup is pending.
       cameraActive: prev.cameraActive,
       gyroActive: next ? true : prev.gyroActive,
-      alqamiModeActive: next ? true : prev.alqamiModeActive,
-      objectTracking3DActive: next ? true : prev.objectTracking3DActive,
-      handTrackingActive: next ? true : prev.handTrackingActive,
+      // Artifact recognition is already part of SpatialWorld. Do not also start the
+      // legacy object tracker; it performs redundant work and used to race camera startup.
+      alqamiModeActive: false,
+      objectTracking3DActive: false,
+      handTrackingActive: next ? prev.cameraActive : false,
     }));
   };
 
