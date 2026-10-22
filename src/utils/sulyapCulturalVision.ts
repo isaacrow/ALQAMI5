@@ -7,6 +7,8 @@
  *  - ohohRain/web_AR (iOS Apple AR Quick Look USDZ generation)
  */
 
+import { assetUrl } from './assetUrl';
+
 export interface CulturalHeritageHotspot {
   id: string;
   nameAr: string;
@@ -131,7 +133,7 @@ class SulyapCulturalVisionEngine {
         category: 'المخطوطات الإسلامية',
         confidence: 0.96,
         box: { x: x1, y: y1, width: w1, height: h1 },
-        glbModel: '/models/nahj_al_balagha.glb',
+        glbModel: assetUrl('models/nahj_al_balagha.glb'),
         descriptionAr: 'نسخة خطية مذهبة من عهد الشريف الرضي بخط النسخ الأندلسي العريق.',
       },
       {
@@ -141,7 +143,7 @@ class SulyapCulturalVisionEngine {
         category: 'الأسلحة والقطع الحربية',
         confidence: 0.92,
         box: { x: x2, y: y2, width: w2, height: h2 },
-        glbModel: '/models/Old_Islamic_Helmet.glb',
+        glbModel: assetUrl('models/Old_Islamic_Helmet.glb'),
         descriptionAr: 'فولاذ كربوني مقسى مكفت بالذهب عيار 24 مع درع زردي متدلي.',
       },
     ];

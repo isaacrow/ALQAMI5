@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { assetUrl } from '../../utils/assetUrl';
 
 interface AlqamiArtifact3DCanvasProps {
   glbUrl: string;
@@ -85,16 +86,15 @@ export const AlqamiArtifact3DCanvas: React.FC<AlqamiArtifact3DCanvasProps> = ({
 
     const modelRoot = new THREE.Group();
     scene.add(modelRoot);
-
     const loader = new GLTFLoader();
     const dracoLoader = new DRACOLoader();
-    dracoLoader.setDecoderPath('/draco/');
+    dracoLoader.setDecoderPath(assetUrl('draco/'));
     loader.setDRACOLoader(dracoLoader);
 
     let disposed = false;
 
     loader.load(
-      glbUrl,
+      assetUrl(glbUrl),
       (gltf) => {
         if (disposed) return;
         const root = gltf.scene;

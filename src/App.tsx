@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { AppId, EnvironmentId, WindowState } from './types/spatial';
 import type { XRHardwareState } from './components/xr/RealARXREngine';
+import { assetUrl } from './utils/assetUrl';
 import { SpatialWindow } from './components/shell/SpatialWindow';
 import { ControlCenter3Panel } from './components/shell/ControlCenter3Panel';
 import { HomeViewLauncher } from './components/shell/HomeViewLauncher';
@@ -490,11 +491,11 @@ export function App() {
 
   // Environment backdrop selection (shown when the camera view is off).
   const environmentBackdrops: Record<EnvironmentId, string> = {
-    'living-room': '/reference/still-b5f564c5b0939789a9dee198fb7fd037.webp',
-    'wood-studio': '/reference/large_2x (1).mp4',
-    thorsmork: '/reference/control_center__e3iguusguvma_large.jpg',
-    'sunset-clouds': '/reference/large_2x (2).mp4',
-    'cafe-lounge': '/reference/oLK7KBr5ogcGwd2SxzuJCH.jpg',
+    'living-room': assetUrl('reference/still-b5f564c5b0939789a9dee198fb7fd037.webp'),
+    'wood-studio': assetUrl('reference/large_2x (1).mp4'),
+    thorsmork: assetUrl('reference/control_center__e3iguusguvma_large.jpg'),
+    'sunset-clouds': assetUrl('reference/large_2x (2).mp4'),
+    'cafe-lounge': assetUrl('reference/oLK7KBr5ogcGwd2SxzuJCH.jpg'),
   };
 
   const totalYaw = xrState.headRotation.yaw + cameraLook.yaw;
@@ -823,7 +824,7 @@ export function App() {
               {/* Dynamic Icelandic Aurora Borealis Ribbons */}
               <div className="absolute -top-20 inset-x-0 h-96 bg-gradient-to-r from-emerald-400/35 via-cyan-300/45 to-purple-500/35 blur-3xl animate-pulse" />
               <img
-                src="/reference/control_center__e3iguusguvma_large.jpg"
+                src={assetUrl('reference/control_center__e3iguusguvma_large.jpg')}
                 alt="Thórsmörk Mountains"
                 className="w-full h-full object-cover object-[78%_55%] scale-[2.2] opacity-55 mix-blend-screen"
               />

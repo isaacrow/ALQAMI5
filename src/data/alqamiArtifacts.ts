@@ -740,3 +740,15 @@ export const ALQAMI_ARTIFACTS: AlqamiArtifact[] = [
     },
   },
 ];
+
+import { assetUrl } from '../utils/assetUrl';
+
+ALQAMI_ARTIFACTS.forEach((a) => {
+  if (a.model?.glb) {
+    a.model.glb = assetUrl(a.model.glb);
+  }
+  if (a.image) {
+    a.image = assetUrl(a.image);
+  }
+});
+

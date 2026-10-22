@@ -19,6 +19,7 @@ import { spatialSound } from '../../../utils/spatialSound';
 import { createTroikaSpatialText } from '../../../utils/troika3DText';
 import { networkedSync } from '../../../utils/networkedSpatialSync';
 import { sulyapVision, CulturalHeritageHotspot, HeritageGeoBeacon } from '../../../utils/sulyapCulturalVision';
+import { assetUrl } from '../../../utils/assetUrl';
 
 /* ──────────────────────────────────────────────────────────────────────────────
  * Spatial World — a visionOS-style "every window is its own object" renderer for
@@ -1063,11 +1064,11 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
       if (artifactDetail?.glb) {
         const loader = new GLTFLoader();
         const dracoLoader = new DRACOLoader();
-        dracoLoader.setDecoderPath('/draco/');
+        dracoLoader.setDecoderPath(assetUrl('draco/'));
         loader.setDRACOLoader(dracoLoader);
 
         loader.load(
-          artifactDetail.glb,
+          assetUrl(artifactDetail.glb),
           (gltf) => {
             const root = gltf.scene;
             const box = new THREE.Box3().setFromObject(root);
