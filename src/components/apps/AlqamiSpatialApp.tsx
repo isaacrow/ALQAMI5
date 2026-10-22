@@ -15,6 +15,7 @@ import {
   Check,
   Scan,
   Sparkles,
+  Smartphone,
 } from 'lucide-react';
 import { ALQAMI_ARTIFACTS, AlqamiArtifact } from '../../data/alqamiArtifacts';
 import { AlqamiArtifact3DCanvas } from '../three/AlqamiArtifact3DCanvas';
@@ -446,6 +447,17 @@ export const AlqamiSpatialApp: React.FC<AlqamiSpatialAppProps> = ({ onPreviewInS
                 <Box className="w-4 h-4" />
                 <span>Preview in your space</span>
               </button>
+              <a
+                href={`${assetUrl('/immersive-ar.html')}?model=${encodeURIComponent(assetUrl(currentArtifact.model.glb))}&title=${encodeURIComponent(currentArtifact.title.en)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => spatialSound.playPinchTap()}
+                className="vision-btn h-10 px-3 rounded-full bg-amber-400 hover:bg-amber-300 text-stone-950 text-[13px] font-semibold flex items-center gap-2 shadow-sm cursor-pointer transition-all active:scale-95"
+                title="Open this artifact in iPhone AR Quick Look"
+              >
+                <Smartphone className="w-4 h-4" />
+                <span>View in iPhone AR</span>
+              </a>
 
               <div className="flex items-center gap-2">
                 <button

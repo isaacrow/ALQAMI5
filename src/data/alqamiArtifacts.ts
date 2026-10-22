@@ -85,7 +85,7 @@ export const ALQAMI_ARTIFACTS: AlqamiArtifact[] = [
     rating: 4.0,
     reviewsCount: 12,
     itemCode: '1022 هـ / هـ',
-    image: '/images/manuscript.jpg',
+    image: '/images/model-nahj_al_balagha.png',
     model: {
       glb: '/models/nahj_al_balagha.glb',
       scale: 1.0,
@@ -159,7 +159,7 @@ export const ALQAMI_ARTIFACTS: AlqamiArtifact[] = [
     rating: 4.9,
     reviewsCount: 34,
     itemCode: 'HLM-OTT-15',
-    image: '/images/alqami_artifact.jpg',
+    image: '/images/model-Old_Islamic_Helmet.png',
     model: {
       glb: '/models/Old_Islamic_Helmet.glb',
       scale: 1.1,
@@ -221,7 +221,7 @@ export const ALQAMI_ARTIFACTS: AlqamiArtifact[] = [
     rating: 4.8,
     reviewsCount: 28,
     itemCode: 'SWD-OTT-16',
-    image: '/images/hand.jpg',
+    image: '/images/model-Zulfiqar_Sword.png',
     model: {
       glb: '/models/Zulfiqar_Sword.glb',
       scale: 1.2,
@@ -283,7 +283,7 @@ export const ALQAMI_ARTIFACTS: AlqamiArtifact[] = [
     rating: 4.8,
     reviewsCount: 42,
     itemCode: 'MAP-BAB-001',
-    image: '/images/praha_front.jpg',
+    image: '/images/model-babylonian_map_of_the_world_tablet_-_imago_mundi.png',
     model: {
       glb: '/models/babylonian_map_of_the_world_tablet_-_imago_mundi.glb',
       scale: 1.3,
@@ -344,7 +344,7 @@ export const ALQAMI_ARTIFACTS: AlqamiArtifact[] = [
     rating: 4.6,
     reviewsCount: 17,
     itemCode: 'TAB-BAB-S264',
-    image: '/images/praha_side1.jpg',
+    image: '/images/model-old-babylonian_cuneiform_tablet_s264.png',
     model: {
       glb: '/models/old-babylonian_cuneiform_tablet_s264.glb',
       scale: 1.2,
@@ -405,7 +405,7 @@ export const ALQAMI_ARTIFACTS: AlqamiArtifact[] = [
     rating: 4.7,
     reviewsCount: 23,
     itemCode: 'BWL-SAQ-18',
-    image: '/images/praha_top.jpg',
+    image: '/images/model-saqakhane_bowl.png',
     model: {
       glb: '/models/saqakhane_bowl.glb',
       scale: 1.0,
@@ -466,7 +466,7 @@ export const ALQAMI_ARTIFACTS: AlqamiArtifact[] = [
     rating: 4.9,
     reviewsCount: 31,
     itemCode: 'MHR-KAS-14',
-    image: '/images/kufic.jpg',
+    image: '/images/model-prayer_niche_mihrab.png',
     model: {
       glb: '/models/prayer_niche_mihrab.glb',
       scale: 0.85,
@@ -527,7 +527,7 @@ export const ALQAMI_ARTIFACTS: AlqamiArtifact[] = [
     rating: 4.8,
     reviewsCount: 39,
     itemCode: 'STL-HAM-1750',
-    image: '/images/praha_back.jpg',
+    image: '/images/model-stela_of_hammurabi_replica.png',
     model: {
       glb: '/models/stela_of_hammurabi_replica.glb',
       scale: 0.9,
@@ -588,7 +588,7 @@ export const ALQAMI_ARTIFACTS: AlqamiArtifact[] = [
     rating: 4.5,
     reviewsCount: 16,
     itemCode: 'BWL-NIS-10',
-    image: '/images/praha_side2.jpg',
+    image: '/images/model-bowl.png',
     model: {
       glb: '/models/bowl.glb',
       scale: 1.1,
@@ -649,7 +649,7 @@ export const ALQAMI_ARTIFACTS: AlqamiArtifact[] = [
     rating: 4.7,
     reviewsCount: 14,
     itemCode: 'MSS-QAB-1650',
-    image: '/images/manuscript.jpg',
+    image: '/images/model-model.png',
     model: {
       glb: '/models/model.glb',
       scale: 1.0,
@@ -710,7 +710,7 @@ export const ALQAMI_ARTIFACTS: AlqamiArtifact[] = [
     rating: 4.9,
     reviewsCount: 48,
     itemCode: 'MSH-ALQ-3D',
-    image: '/images/quran.jpg',
+    image: '/images/model-meshy-model.png',
     model: {
       glb: '/models/meshy-model.glb',
       scale: 1.0,

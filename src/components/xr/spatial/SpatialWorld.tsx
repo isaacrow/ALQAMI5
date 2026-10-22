@@ -12,13 +12,13 @@ import * as THREE from 'three';
 import { CSS3DObject, CSS3DRenderer } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { Box, Camera, Compass, Crosshair, Globe, Hand, Layers, LayoutGrid, LogOut, MapPin, Mountain, Navigation, PenTool, QrCode, RotateCcw, Ruler, Scan, SlidersHorizontal, Sparkles, Trash2, Undo2, Users } from 'lucide-react';
+import { Box, Camera, Compass, Crosshair, Globe, Hand, Layers, LayoutGrid, LogOut, MapPin, Mountain, Navigation, PenTool, QrCode, RotateCcw, Scan, SlidersHorizontal, Trash2, Undo2, Users } from 'lucide-react';
 import { OrientationTracker, requestMotionPermission } from './orientationTracker';
 import { createLovbackenModel, disposeThreeObject } from '../../three/LovbackenModel';
 import { spatialSound } from '../../../utils/spatialSound';
 import { createTroikaSpatialText } from '../../../utils/troika3DText';
 import { networkedSync } from '../../../utils/networkedSpatialSync';
-import { sulyapVision, CulturalHeritageHotspot, HeritageGeoBeacon } from '../../../utils/sulyapCulturalVision';
+import { sulyapVision, HeritageGeoBeacon } from '../../../utils/sulyapCulturalVision';
 import { assetUrl } from '../../../utils/assetUrl';
 
 /* ──────────────────────────────────────────────────────────────────────────────
@@ -377,11 +377,6 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
   immersionRef.current = immersionLevel;
   const [immersionOpen, setImmersionOpen] = useState(false);
 
-  const [rulerActive, setRulerActive] = useState(false);
-  const rulerActiveRef = useRef(rulerActive);
-  rulerActiveRef.current = rulerActive;
-  const [laserDistance, setLaserDistance] = useState<number | null>(null);
-
   const [radarBlips, setRadarBlips] = useState<Array<{ id: string; x: number; y: number; type: 'window' | 'object' }>>([]);
   const [radarHeading, setRadarHeading] = useState(0);
   const [flashActive, setFlashActive] = useState(false);
@@ -401,11 +396,6 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
   const [airStrokesCount, setAirStrokesCount] = useState(0);
   const airStrokesGroupRef = useRef<THREE.Group | null>(null);
   const activeStrokeRef = useRef<{ line: THREE.Line; points: THREE.Vector3[] } | null>(null);
-
-  const [sulyapAiActive, setSulyapAiActive] = useState(true);
-  const sulyapAiActiveRef = useRef(sulyapAiActive);
-  sulyapAiActiveRef.current = sulyapAiActive;
-  const [sulyapHotspots, setSulyapHotspots] = useState<CulturalHeritageHotspot[]>([]);
 
   const [geoBeaconsActive, setGeoBeaconsActive] = useState(false);
   const geoBeaconsActiveRef = useRef(geoBeaconsActive);
@@ -645,12 +635,8 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
         focusReticle.scale.set(pulse, 1, pulse);
         const ticks = focusReticle.getObjectByName('ticks');
         if (ticks) ticks.rotation.z = now * 0.0012;
-        if (rulerActiveRef.current) {
-          setLaserDistance(Math.round(floorHit.length() / 10));
-        }
       } else {
         focusReticle.visible = false;
-        if (rulerActiveRef.current) setLaserDistance(null);
       }
 
       // 4) Gaze raycasting on spatial windows (barehands / pinchplan)
@@ -732,11 +718,6 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
           yaw: cam.yaw,
           pitch: cam.pitch,
         });
-      }
-
-      // gecapistrano/sulyap-lasalyano: Museum Cultural AI Artifact Recognition
-      if (sulyapAiActiveRef.current && frame % 12 === 0) {
-        setSulyapHotspots(sulyapVision.scanViewportArtifacts(window.innerWidth, window.innerHeight, now));
       }
 
       // germanalvarez15/KitCoreWebAR: Real GPS Geographic Heritage Beacons
@@ -1121,7 +1102,36 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
       const ornament = new CSS3DObject(el);
       ornament.scale.setScalar(1.6);
       scene.add(ornament);
-      el.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+      const dragModel = { active: false, x: 0, y: 0 };
+      el.addEventListener('pointerdown', (ev) => {
+        ev.stopPropagation();
+        if ((ev.target as HTMLElement).closest('button')) return;
+        dragModel.active = true;
+        dragModel.x = ev.clientX;
+        dragModel.y = ev.clientY;
+        el.setPointerCapture?.(ev.pointerId);
+        el.style.cursor = 'grabbing';
+      });
+      el.addEventListener('pointermove', (ev) => {
+        if (!dragModel.active) return;
+        ev.stopPropagation();
+        const camera = cameraRef.current;
+        if (!camera) return;
+        const unitsPerPixel = (2 * Math.max(500, camera.position.distanceTo(group.position)) * Math.tan((camera.fov * DEG) / 2)) / window.innerHeight;
+        camera.updateMatrixWorld();
+        const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+        const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+        group.position.addScaledVector(right, (ev.clientX - dragModel.x) * unitsPerPixel);
+        group.position.addScaledVector(up, (dragModel.y - ev.clientY) * unitsPerPixel);
+        dragModel.x = ev.clientX;
+        dragModel.y = ev.clientY;
+      });
+      const stopModelDrag = (ev: PointerEvent) => {
+        dragModel.active = false;
+        el.style.cursor = '';
+      };
+      el.addEventListener('pointerup', stopModelDrag);
+      el.addEventListener('pointercancel', stopModelDrag);
       el.addEventListener('click', (ev) => {
         const act = (ev.target as HTMLElement).closest('button')?.dataset.act;
         if (act === 'rotate') {
@@ -1518,58 +1528,9 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
           </div>
         </div>
 
-        {/* LiDAR Distance Laser Measuring Tag (arkit-ruler) */}
-        {rulerActive && laserDistance !== null && (
-          <div className="absolute left-1/2 top-[58%] -translate-x-1/2 z-[61] rounded-full vision-glass border border-cyan-400/50 px-3.5 py-1 text-xs font-mono font-bold text-cyan-300 shadow-[0_0_18px_rgba(0,245,212,0.5)] flex items-center gap-1.5">
-            <Ruler className="h-3.5 w-3.5" />
-            <span>{laserDistance} cm ({(laserDistance / 100).toFixed(2)} m)</span>
-          </div>
-        )}
-
         {/* Camera Snapshot Flash Animation */}
         {flashActive && (
           <div className="fixed inset-0 z-[100] bg-white animate-out fade-out duration-300 pointer-events-none" />
-        )}
-
-        {/* gecapistrano/sulyap-lasalyano: Cultural Heritage AI Recognition Overlay */}
-        {sulyapAiActive && (
-          <div className="fixed inset-0 z-[53] pointer-events-none">
-            {sulyapHotspots.map((spot) => (
-              <div
-                key={spot.id}
-                style={{
-                  left: `${spot.box.x}px`,
-                  top: `${spot.box.y}px`,
-                  width: `${spot.box.width}px`,
-                  height: `${spot.box.height}px`,
-                }}
-                className="absolute border-2 border-amber-400/80 rounded-2xl bg-amber-400/10 backdrop-blur-[2px] shadow-[0_0_24px_rgba(251,191,36,0.4)] pointer-events-auto p-2.5 flex flex-col justify-between animate-in fade-in"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="px-2 py-0.5 rounded-full bg-amber-400 text-black text-[9px] font-extrabold uppercase tracking-wide">
-                    {spot.category}
-                  </span>
-                  <span className="text-[10px] font-mono text-amber-200 font-bold">
-                    {Math.round(spot.confidence * 100)}% AI
-                  </span>
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-white leading-tight">{spot.nameAr}</h4>
-                  <p className="text-[10px] text-white/70 line-clamp-1">{spot.descriptionAr}</p>
-                </div>
-                <button
-                  onClick={() => {
-                    placeObject({ glb: spot.glbModel, label: spot.nameAr });
-                    spatialSound.playPinchTap();
-                  }}
-                  className="mt-1 py-1 rounded-full bg-amber-400 hover:bg-amber-300 text-black text-[10px] font-bold flex items-center justify-center gap-1 shadow-md cursor-pointer transition active:scale-95"
-                >
-                  <Box className="h-3 w-3" />
-                  <span>انشر في غرفتك 3D</span>
-                </button>
-              </div>
-            ))}
-          </div>
         )}
 
         {/* germanalvarez15/KitCoreWebAR: Real GPS Geographic Heritage Beacons */}
@@ -1693,30 +1654,6 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
             title="Digital Crown: Environment Immersion Blender"
           >
             <Mountain className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => {
-              spatialSound.playPinchTap();
-              setRulerActive((r) => !r);
-            }}
-            className={`world-hud-btn ${rulerActive ? 'bg-cyan-500/40 text-cyan-300 ring-1 ring-cyan-400' : 'hover:bg-white/15'}`}
-            title="LiDAR Laser Distance Ruler"
-          >
-            <Ruler className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => {
-              spatialSound.playPinchTap();
-              setSulyapAiActive((s) => !s);
-            }}
-            className={`world-hud-btn ${
-              sulyapAiActive
-                ? 'bg-amber-500/40 text-amber-300 ring-1 ring-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.6)]'
-                : 'hover:bg-white/15'
-            }`}
-            title="gecapistrano/sulyap-lasalyano: Museum Cultural AI Artifact Recognition"
-          >
-            <Sparkles className="h-4 w-4" />
           </button>
           <button
             onClick={() => {

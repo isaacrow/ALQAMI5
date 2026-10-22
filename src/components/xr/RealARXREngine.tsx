@@ -485,8 +485,8 @@ export const RealARXREngine: React.FC<RealARXREngineProps> = ({
           stream = await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: { ideal: facing },
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 },
             },
             audio: false,
           });
@@ -718,18 +718,20 @@ export const RealARXREngine: React.FC<RealARXREngineProps> = ({
           'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
         const trackerOptions = {
           runningMode: 'VIDEO',
-          numHands: 2,
+          numHands: 1,
         } as const;
+        const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         try {
           handLandmarker = await vision.HandLandmarker.createFromOptions(filesetResolver, {
             ...trackerOptions,
-            baseOptions: { modelAssetPath, delegate: 'GPU' },
+            baseOptions: { modelAssetPath, delegate: isIOS ? 'CPU' : 'GPU' },
           });
         } catch {
-          // Several mobile browsers expose camera video but cannot initialize MediaPipe's GPU delegate.
+          // Fall back for browsers where the preferred delegate is unavailable.
           handLandmarker = await vision.HandLandmarker.createFromOptions(filesetResolver, {
             ...trackerOptions,
-            baseOptions: { modelAssetPath, delegate: 'CPU' },
+            baseOptions: { modelAssetPath, delegate: isIOS ? 'GPU' : 'CPU' },
           });
         }
         setHandModelLoading(false);
@@ -743,7 +745,7 @@ export const RealARXREngine: React.FC<RealARXREngineProps> = ({
           if (!video || !canvas || video.readyState < 2 || !handLandmarker) return;
 
           const now = performance.now();
-          if (now - lastInferenceTime < 33) return;
+          if (now - lastInferenceTime < 66) return;
           lastInferenceTime = now;
 
           if (canvas.width !== window.innerWidth) canvas.width = window.innerWidth;
@@ -2008,22 +2010,6 @@ export const RealARXREngine: React.FC<RealARXREngineProps> = ({
           >
             ✕
           </button>
-        </div>
-      )}
-
-      {/* Live camera color sample while camera passthrough is active. */}
-      {xrState.cameraActive && (
-        <div className="fixed bottom-4 right-5 z-[75] vision-ornament px-3 py-1 rounded-full text-[11px] text-white/80 flex items-center gap-2 pointer-events-none">
-          <Eye className="w-3 h-3 text-emerald-400" />
-          <span>
-            Live camera tint sample
-          </span>
-          <span
-            className="w-2.5 h-2.5 rounded-full border border-white/40"
-            style={{
-              backgroundColor: `rgb(${xrState.ambientRGB.r}, ${xrState.ambientRGB.g}, ${xrState.ambientRGB.b})`,
-            }}
-          />
         </div>
       )}
 

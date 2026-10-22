@@ -899,6 +899,7 @@ export function App() {
       gyroActive: next ? true : prev.gyroActive,
       alqamiModeActive: next ? true : prev.alqamiModeActive,
       objectTracking3DActive: next ? true : prev.objectTracking3DActive,
+      handTrackingActive: next ? true : prev.handTrackingActive,
     }));
   };
 
