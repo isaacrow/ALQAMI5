@@ -895,7 +895,10 @@ export function App() {
     setXrState((prev) => ({
       ...prev,
       spatialWorldActive: next,
-      cameraActive: next ? true : prev.cameraActive,
+      // RealARXREngine enables cameraActive only after Safari has opened and played
+      // the camera stream. Marking it true here hides the room backdrop too early,
+      // which leaves a black screen while permission/startup is pending.
+      cameraActive: prev.cameraActive,
       gyroActive: next ? true : prev.gyroActive,
       alqamiModeActive: next ? true : prev.alqamiModeActive,
       objectTracking3DActive: next ? true : prev.objectTracking3DActive,
@@ -906,7 +909,7 @@ export function App() {
   return (
     <div
       ref={domOverlayRootRef}
-      className={`visionos-root fixed inset-0 w-screen h-[100dvh] overflow-hidden isolate ${xrState.webxrSessionActive || xrState.cameraActive ? 'bg-transparent' : 'bg-black'}`}
+      className={`visionos-root fixed inset-0 w-screen h-[100dvh] overflow-hidden isolate ${xrState.webxrSessionActive || xrState.cameraActive || xrState.spatialWorldActive ? 'bg-transparent' : 'bg-black'}`}
     >
       {/* Real Hardware AR / XR Sensor & Camera Engine */}
       <Suspense fallback={null}>

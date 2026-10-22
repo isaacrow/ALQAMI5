@@ -1607,6 +1607,11 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
           } ${isMicroPinching ? 'is-pinching' : ''} ${handControlActive ? 'opacity-0' : ''}`}
         />
 
+        {!cameraActive && (
+          <div className="absolute top-20 left-1/2 z-[54] -translate-x-1/2 rounded-full vision-glass px-3 py-1 text-[10px] text-white/80 pointer-events-none">
+            Waiting for Safari camera access…
+          </div>
+        )}
         {cameraActive && recognitionStatus === 'loading' && !recognizedArtifact && (
           <div className="absolute top-20 left-1/2 z-[54] -translate-x-1/2 rounded-full vision-glass px-3 py-1 text-[10px] text-white/75 pointer-events-none">
             Preparing automatic artifact recognition…
