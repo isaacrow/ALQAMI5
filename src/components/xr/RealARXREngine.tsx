@@ -503,8 +503,18 @@ export const RealARXREngine: React.FC<RealARXREngineProps> = ({
 
         streamRef.current = stream;
         if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+          const v = videoRef.current;
+          v.srcObject = stream;
+          v.muted = true;
+          v.defaultMuted = true;
+          v.playsInline = true;
+          v.setAttribute('playsinline', 'true');
+          v.setAttribute('webkit-playsinline', 'true');
+          try {
+            await v.play();
+          } catch (e) {
+            console.warn('iOS video.play() deferred:', e);
+          }
         }
         setXrState((prev) => ({
           ...prev,
@@ -540,8 +550,15 @@ export const RealARXREngine: React.FC<RealARXREngineProps> = ({
       if (xrState.cameraActive) stopRealCamera();
       else void startRealCamera('environment');
     };
+    const startCamera = () => {
+      void startRealCamera('environment');
+    };
     window.addEventListener('visionos:toggle-camera', toggleCamera);
-    return () => window.removeEventListener('visionos:toggle-camera', toggleCamera);
+    window.addEventListener('visionos:start-camera', startCamera);
+    return () => {
+      window.removeEventListener('visionos:toggle-camera', toggleCamera);
+      window.removeEventListener('visionos:start-camera', startCamera);
+    };
   }, [xrState.cameraActive, startRealCamera, stopRealCamera]);
 
   // 3. Real-time Camera Ambient Light Estimation (tints visionOS glass to match physical room)

@@ -128,6 +128,7 @@ export const ControlCenter3Panel: React.FC<ControlCenter3PanelProps> = ({
           <div
             onClick={() => {
               spatialSound.playAlqamiChime();
+              window.dispatchEvent(new Event('visionos:start-camera'));
               onToggleSpatialWorld?.();
             }}
             className={`rounded-[24px] transition-all duration-300 p-3.5 flex flex-col justify-between gap-3 cursor-pointer active:scale-98 select-none ${

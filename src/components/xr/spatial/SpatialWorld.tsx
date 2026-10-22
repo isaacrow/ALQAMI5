@@ -498,7 +498,7 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
     const roomTexLoader = new THREE.TextureLoader();
     roomTexLoader.load(assetUrl('images/custom_room_bg.png'), (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
-      const roomGeo = new THREE.CylinderGeometry(8000, 8000, 5200, 36, 1, true, -Math.PI * 0.75, Math.PI * 1.5);
+      const roomGeo = new THREE.SphereGeometry(12000, 48, 32);
       const roomMat = new THREE.MeshBasicMaterial({
         map: tex,
         side: THREE.BackSide,
@@ -507,7 +507,7 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
         opacity: 0.95,
       });
       const roomMesh = new THREE.Mesh(roomGeo, roomMat);
-      roomMesh.position.set(0, -EYE_HEIGHT + 2400, 0);
+      roomMesh.position.set(0, 0, 0);
       env.add(roomMesh);
     });
 
@@ -782,7 +782,7 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
       cssRenderer.render(scene, camera);
       if (env.visible || objectsRef.current.size > 0 || focusReticle.visible || handOcclGroup.visible) {
         gl.render(glScene, camera);
-      } else if (frame % 30 === 0) {
+      } else {
         gl.clear();
       }
 
@@ -801,6 +801,7 @@ export const SpatialWorld: React.FC<SpatialWorldProps> = ({
     camera.updateProjectionMatrix();
     pendingPanelsRef.current.forEach((p, id) => api.current.addPanel(id, p.el, p.width, p.height));
     pendingPanelsRef.current.clear();
+    window.setTimeout(() => recenter(), 150);
 
     return () => {
       cancelAnimationFrame(raf);

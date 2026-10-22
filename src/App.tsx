@@ -898,24 +898,17 @@ export function App() {
     spatialSound.playAlqamiChime();
     const next = !xrState.spatialWorldActive;
     if (next) {
-      await requestMotionPermission();
-      if (!xrState.cameraActive) {
-        window.dispatchEvent(new Event('visionos:toggle-camera'));
-      }
+      window.dispatchEvent(new Event('visionos:start-camera'));
+      void requestMotionPermission();
     }
     setXrState((prev) => ({
       ...prev,
       spatialWorldActive: next,
-      // RealARXREngine enables cameraActive only after Safari has opened and played
-      // the camera stream. Marking it true here hides the room backdrop too early,
-      // which leaves a black screen while permission/startup is pending.
-      cameraActive: prev.cameraActive,
+      cameraActive: next ? true : prev.cameraActive,
       gyroActive: next ? true : prev.gyroActive,
-      // Artifact recognition is already part of SpatialWorld. Do not also start the
-      // legacy object tracker; it performs redundant work and used to race camera startup.
       alqamiModeActive: false,
       objectTracking3DActive: false,
-      handTrackingActive: next ? prev.cameraActive : false,
+      handTrackingActive: next,
     }));
   };
 
